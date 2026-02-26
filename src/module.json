@@ -1,17 +1,17 @@
 {
   "$schema": "https://json.schemastore.org/foundryvtt-manifest.json",
-  "id": "foundry-module-ts",
-  "title": "Typescript Template Module",
-  "description": "A template module using Typescript. You should change name, title, and description in module.json.",
-  "version": "1.0.0",
+  "id": "shape-so-nice",
+  "title": "Wildshape Companion",
+  "description": "Nimble-first wildshape automation with safe, reversible transforms.",
+  "version": "0.1.0",
   "packs": [],
   "system": [],
   "dependencies": [],
   "scripts": [],
   "compatibility": {
-    "minimum": "9",
-    "verified": "10",
-    "maximum": "10"
+    "minimum": "13",
+    "verified": "13",
+    "maximum": "13"
   },
   "languages": [
     {

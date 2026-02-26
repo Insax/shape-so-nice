@@ -7,16 +7,14 @@ const moduleVersion = process.env.MODULE_VERSION;
 const githubProject = process.env.GH_PROJECT;
 const githubTag = process.env.GH_TAG;
 
-console.log(process.env.VSCODE_INJECTION);
-
 export default defineConfig({
   build: {
+    outDir: "dist",
     sourcemap: true,
     rollupOptions: {
       input: "src/ts/module.ts",
       output: {
-        dir: undefined,
-        file: "dist/scripts/module.js",
+        entryFileNames: "scripts/module.js",
         format: "es",
       },
     },

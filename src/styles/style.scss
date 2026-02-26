@@ -1,16 +1,159 @@
-.window-app .window-content section.module-dog-picture-container {
-  flex: 100;
-  display: flex;
-  justify-content: center;
-  align-content: center;
-  margin-top: 10px;
-
-  .module-dog-placeholder {
-    font-size: 200px;
+.wildshape-global-config-form,
+.wildshape-player-override-form {
+  .form-group {
+    align-items: initial;
+    display: block;
+    margin: 0 0 10px 0;
   }
 
-  img.module-dog-image {
-    object-fit: contain;
-    border: none;
+  .form-group > label {
+    display: block;
+    margin: 0 0 4px 0;
+    width: auto;
+  }
+
+  .form-fields {
+    display: block;
+    width: 100%;
+  }
+
+  .form-fields > input[type="text"],
+  .form-fields > input[type="number"],
+  .form-fields > select,
+  .form-fields > textarea {
+    width: 100%;
+  }
+
+  .ws-config-section {
+    border: 1px solid rgba(0, 0, 0, 0.1);
+    border-radius: 6px;
+    margin-bottom: 12px;
+    padding: 12px;
+  }
+
+  .ws-section-header,
+  .ws-card-header,
+  .ws-form-ref-header {
+    align-items: center;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 10px;
+    justify-content: space-between;
+    margin-bottom: 8px;
+  }
+
+  .ws-form-ref-header .notes {
+    flex: 1 1 260px;
+    margin: 0;
+  }
+
+  .ws-mapping-card {
+    border: 1px solid rgba(0, 0, 0, 0.08);
+    border-radius: 6px;
+    margin-bottom: 10px;
+    padding: 10px;
+  }
+
+  .ws-card-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .ws-mapping-card.is-collapsed {
+    .ws-mapping-body {
+      display: none;
+    }
+  }
+
+  .ws-mapping-grid {
+    align-items: start;
+    display: grid;
+    gap: 8px 12px;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+
+    .form-group {
+      margin: 0;
+      min-width: 0;
+    }
+  }
+
+  .ws-grid-span-2 {
+    grid-column: 1 / -1;
+  }
+
+  .ws-form-ref-row {
+    align-items: center;
+    display: grid;
+    gap: 8px;
+    margin-bottom: 6px;
+
+    input,
+    select {
+      margin: 0;
+      width: 100%;
+    }
+
+    button {
+      align-self: center;
+      flex: 0 0 auto;
+      white-space: nowrap;
+    }
+  }
+
+  .ws-form-ref-row--simple {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .ws-form-ref-row--form-ref {
+    grid-template-columns: 120px minmax(0, 1fr) 22px auto;
+  }
+
+  .ws-form-ref-row--ability-ref {
+    grid-template-columns: minmax(0, 1fr) 22px minmax(0, 180px) auto;
+  }
+
+  .ws-ability-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .ws-entry-status {
+    align-items: center;
+    display: inline-flex;
+    flex: 0 0 22px;
+    font-size: 14px;
+    justify-content: center;
+
+    &.is-match {
+      color: #15803d;
+    }
+
+    &.is-missing {
+      color: #b91c1c;
+    }
+  }
+
+  @media (max-width: 900px) {
+    .ws-mapping-grid {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .ws-grid-span-2 {
+      grid-column: auto;
+    }
+
+    .ws-form-ref-row--simple,
+    .ws-form-ref-row--form-ref,
+    .ws-form-ref-row--ability-ref {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .ws-entry-status,
+    .ws-form-ref-row button {
+      justify-self: start;
+    }
   }
 }

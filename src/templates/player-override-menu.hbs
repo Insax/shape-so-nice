@@ -1,0 +1,166 @@
+<form class="wildshape-player-override-form">
+  <section class="ws-config-section">
+    <h2>Personal Override</h2>
+    {{#if hasTargetUser}}
+      {{#if canEdit}}
+        <p class="notes">Manage your personal form additions/removals and filter overrides.</p>
+      {{else}}
+        <p class="notes">You are not permitted to edit player override settings in this world.</p>
+      {{/if}}
+    {{else}}
+      <p class="notes">No active user context is available.</p>
+    {{/if}}
+  </section>
+
+  <section class="ws-config-section">
+    <h2>Mappings</h2>
+    {{#if mappings.length}}
+      {{#each mappings}}
+        <article class="ws-mapping-card">
+          <div class="ws-card-header">
+            <h3>{{this.id}}</h3>
+            <span class="notes">Trigger: {{this.triggerValue}}</span>
+          </div>
+
+          <input type="hidden" name="mappings.{{this.index}}.id" value="{{this.id}}" />
+
+          <div class="ws-form-ref-list">
+            <div class="ws-form-ref-header">
+              <h4>Forms To Add</h4>
+              {{#if ../canEdit}}
+                <button type="button" data-action="add-form-add" data-mapping-index="{{this.index}}">Add Form</button>
+              {{/if}}
+            </div>
+            {{#if this.formRefsAdd.length}}
+              {{#each this.formRefsAdd}}
+                <div class="ws-form-ref-row ws-form-ref-row--form-ref">
+                  <select name="mappings.{{../index}}.formRefsAdd.{{this.index}}.mode" {{#unless ../../canEdit}}disabled{{/unless}}>
+                    {{#each this.modeOptions}}
+                      <option value="{{this.value}}" {{#if this.selected}}selected{{/if}}>{{this.label}}</option>
+                    {{/each}}
+                  </select>
+                  <input
+                    type="text"
+                    name="mappings.{{../index}}.formRefsAdd.{{this.index}}.value"
+                    value="{{this.value}}"
+                    placeholder="Actor name or Actor UUID"
+                    {{#unless ../../canEdit}}disabled{{/unless}}
+                  />
+                  <span
+                    class="ws-entry-status {{#if this.matchFound}}is-match{{else}}is-missing{{/if}}"
+                    title="{{#if this.matchFound}}Matching actor found{{else}}No matching actor found{{/if}}"
+                  >
+                    <i class="{{#if this.matchFound}}fas fa-check{{else}}fas fa-times{{/if}}"></i>
+                  </span>
+                  {{#if ../../canEdit}}
+                    <button
+                      type="button"
+                      data-action="remove-form-add"
+                      data-mapping-index="{{../index}}"
+                      data-form-ref-index="{{this.index}}"
+                    >
+                      Remove
+                    </button>
+                  {{/if}}
+                </div>
+              {{/each}}
+            {{else}}
+              <p class="notes">No additional forms.</p>
+            {{/if}}
+          </div>
+
+          <div class="ws-form-ref-list">
+            <div class="ws-form-ref-header">
+              <h4>Forms To Remove</h4>
+              {{#if ../canEdit}}
+                <button type="button" data-action="add-form-remove" data-mapping-index="{{this.index}}">Add Form</button>
+              {{/if}}
+            </div>
+            {{#if this.formRefsRemove.length}}
+              {{#each this.formRefsRemove}}
+                <div class="ws-form-ref-row ws-form-ref-row--form-ref">
+                  <select name="mappings.{{../index}}.formRefsRemove.{{this.index}}.mode" {{#unless ../../canEdit}}disabled{{/unless}}>
+                    {{#each this.modeOptions}}
+                      <option value="{{this.value}}" {{#if this.selected}}selected{{/if}}>{{this.label}}</option>
+                    {{/each}}
+                  </select>
+                  <input
+                    type="text"
+                    name="mappings.{{../index}}.formRefsRemove.{{this.index}}.value"
+                    value="{{this.value}}"
+                    placeholder="Actor name or Actor UUID"
+                    {{#unless ../../canEdit}}disabled{{/unless}}
+                  />
+                  <span
+                    class="ws-entry-status {{#if this.matchFound}}is-match{{else}}is-missing{{/if}}"
+                    title="{{#if this.matchFound}}Matching actor found{{else}}No matching actor found{{/if}}"
+                  >
+                    <i class="{{#if this.matchFound}}fas fa-check{{else}}fas fa-times{{/if}}"></i>
+                  </span>
+                  {{#if ../../canEdit}}
+                    <button
+                      type="button"
+                      data-action="remove-form-remove"
+                      data-mapping-index="{{../index}}"
+                      data-form-ref-index="{{this.index}}"
+                    >
+                      Remove
+                    </button>
+                  {{/if}}
+                </div>
+              {{/each}}
+            {{else}}
+              <p class="notes">No removed forms.</p>
+            {{/if}}
+          </div>
+
+          <div class="form-group">
+            <label>Enable Filter Override</label>
+            <div class="form-fields">
+              <input
+                type="checkbox"
+                name="mappings.{{this.index}}.filtersOverride.enabled"
+                {{#if this.filtersOverrideEnabled}}checked{{/if}}
+                {{#unless ../canEdit}}disabled{{/unless}}
+              />
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label>Whitelist</label>
+            <div class="form-fields">
+              <input
+                type="text"
+                name="mappings.{{this.index}}.filtersOverride.whitelist"
+                value="{{this.whitelistInput}}"
+                placeholder="Bite, Claw"
+                {{#unless ../canEdit}}disabled{{/unless}}
+              />
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label>Blacklist</label>
+            <div class="form-fields">
+              <input
+                type="text"
+                name="mappings.{{this.index}}.filtersOverride.blacklist"
+                value="{{this.blacklistInput}}"
+                placeholder="Dash"
+                {{#unless ../canEdit}}disabled{{/unless}}
+              />
+            </div>
+          </div>
+        </article>
+      {{/each}}
+    {{else}}
+      <p class="notes">No global mappings exist yet; nothing to override.</p>
+    {{/if}}
+  </section>
+
+  {{#if canEdit}}
+    <footer class="sheet-footer flexrow">
+      <button type="submit" name="submit">Save Player Override</button>
+    </footer>
+  {{/if}}
+</form>

@@ -1,0 +1,227 @@
+<form class="wildshape-global-config-form">
+  <section class="ws-config-section">
+    <h2>General</h2>
+
+    <div class="form-group">
+      <label>Player Override Editors</label>
+      <div class="ws-form-ref-header">
+        <p class="notes">User IDs allowed to edit personal overrides.</p>
+        <button type="button" data-action="add-permission-editor">Add User</button>
+      </div>
+        {{#if permissionsEditorEntries.length}}
+        {{#each permissionsEditorEntries}}
+          <div class="ws-form-ref-row ws-form-ref-row--simple">
+            <input
+              type="text"
+              name="permissions.playerOverrideEditors.{{this.index}}.value"
+              value="{{this.value}}"
+              placeholder="user-id"
+            />
+            <button type="button" data-action="remove-permission-editor" data-form-ref-index="{{this.index}}">
+              Remove
+            </button>
+          </div>
+        {{/each}}
+      {{else}}
+        <p class="notes">No users configured.</p>
+      {{/if}}
+    </div>
+
+    <div class="form-group">
+      <label>Debug Logs</label>
+      <div class="form-fields">
+        <input type="checkbox" name="ui.showDebugLogs" {{#if showDebugLogs}}checked{{/if}} />
+      </div>
+    </div>
+  </section>
+
+  <section class="ws-config-section">
+    <div class="ws-section-header">
+      <h2>Mappings</h2>
+      <button type="button" data-action="add-mapping">Add Mapping</button>
+    </div>
+
+    {{#if mappings.length}}
+      {{#each mappings}}
+        <article class="ws-mapping-card {{#if this.collapsed}}is-collapsed{{/if}}">
+          <div class="ws-card-header">
+            <h3 data-role="mapping-title">{{this.title}}</h3>
+            <div class="ws-card-actions">
+              <button
+                type="button"
+                data-action="toggle-mapping"
+                data-mapping-index="{{this.index}}"
+                data-mapping-id="{{this.id}}"
+              >
+                {{#if this.collapsed}}Expand{{else}}Collapse{{/if}}
+              </button>
+              <button type="button" data-action="remove-mapping" data-mapping-index="{{this.index}}">Remove</button>
+            </div>
+          </div>
+
+          <input type="hidden" name="mappings.{{this.index}}.id" value="{{this.id}}" />
+
+          <div class="ws-mapping-grid ws-mapping-body">
+            <div class="form-group ws-grid-span-2">
+              <label>Trigger Item Name</label>
+              <div class="form-fields">
+                <input
+                  type="text"
+                  name="mappings.{{this.index}}.trigger.value"
+                  value="{{this.triggerValue}}"
+                  placeholder="Wildshape"
+                />
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label>Whitelist</label>
+              <div class="ws-form-ref-header">
+                <p class="notes">Allowed form actions.</p>
+                <button type="button" data-action="add-whitelist-entry" data-mapping-index="{{this.index}}">Add Entry</button>
+              </div>
+              {{#if this.whitelistEntries.length}}
+                {{#each this.whitelistEntries}}
+                  <div class="ws-form-ref-row ws-form-ref-row--simple">
+                    <input
+                      type="text"
+                      name="mappings.{{../index}}.defaultFilters.whitelist.{{this.index}}.value"
+                      value="{{this.value}}"
+                      placeholder="Ability name"
+                    />
+                    <button
+                      type="button"
+                      data-action="remove-whitelist-entry"
+                      data-mapping-index="{{../index}}"
+                      data-form-ref-index="{{this.index}}"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                {{/each}}
+              {{else}}
+                <p class="notes">No whitelist entries.</p>
+              {{/if}}
+            </div>
+
+            <div class="form-group">
+              <label>Blacklist</label>
+              <div class="ws-form-ref-header">
+                <p class="notes">Blocked form actions.</p>
+                <button type="button" data-action="add-blacklist-entry" data-mapping-index="{{this.index}}">Add Entry</button>
+              </div>
+              {{#if this.blacklistEntries.length}}
+                {{#each this.blacklistEntries}}
+                  <div class="ws-form-ref-row ws-form-ref-row--simple">
+                    <input
+                      type="text"
+                      name="mappings.{{../index}}.defaultFilters.blacklist.{{this.index}}.value"
+                      value="{{this.value}}"
+                      placeholder="Ability name"
+                    />
+                    <button
+                      type="button"
+                      data-action="remove-blacklist-entry"
+                      data-mapping-index="{{../index}}"
+                      data-form-ref-index="{{this.index}}"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                {{/each}}
+              {{else}}
+                <p class="notes">No blacklist entries.</p>
+              {{/if}}
+            </div>
+
+            <div class="form-group ws-grid-span-2">
+              <label>Form Abilities (UUID)</label>
+              <div class="ws-form-ref-header">
+                <p class="notes">Abilities copied on enter and cleaned on leave.</p>
+                <button type="button" data-action="add-form-ability-entry" data-mapping-index="{{this.index}}">Add Entry</button>
+              </div>
+              {{#if this.formAbilityEntries.length}}
+                {{#each this.formAbilityEntries}}
+                  <div class="ws-form-ref-row ws-form-ref-row--ability-ref">
+                    <input
+                      type="text"
+                      name="mappings.{{../index}}.formAbilityUuids.{{this.index}}.value"
+                      value="{{this.value}}"
+                      placeholder="Actor.<actorId>.Item.<itemId>"
+                    />
+                    <span
+                      class="ws-entry-status {{#if this.matchFound}}is-match{{else}}is-missing{{/if}}"
+                      title="{{#if this.matchFound}}Matching ability found{{else}}No matching ability found{{/if}}"
+                    >
+                      <i class="{{#if this.matchFound}}fas fa-check{{else}}fas fa-times{{/if}}"></i>
+                    </span>
+                    <span class="ws-ability-name" data-role="ability-name">
+                      {{#if this.abilityName}}{{this.abilityName}}{{else}}Unknown ability{{/if}}
+                    </span>
+                    <button
+                      type="button"
+                      data-action="remove-form-ability-entry"
+                      data-mapping-index="{{../index}}"
+                      data-form-ref-index="{{this.index}}"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                {{/each}}
+              {{else}}
+                <p class="notes">No form ability UUIDs configured.</p>
+              {{/if}}
+            </div>
+
+            <div class="ws-form-ref-list ws-grid-span-2">
+              <div class="ws-form-ref-header">
+                <h4>Mapped Forms</h4>
+                <button type="button" data-action="add-form-ref" data-mapping-index="{{this.index}}">Add Form</button>
+              </div>
+
+              {{#if this.formRefs.length}}
+                {{#each this.formRefs}}
+                  <div class="ws-form-ref-row ws-form-ref-row--form-ref">
+                    <select name="mappings.{{../index}}.formRefs.{{this.index}}.mode">
+                      {{#each this.modeOptions}}
+                        <option value="{{this.value}}" {{#if this.selected}}selected{{/if}}>{{this.label}}</option>
+                      {{/each}}
+                    </select>
+                    <input
+                      type="text"
+                      name="mappings.{{../index}}.formRefs.{{this.index}}.value"
+                      value="{{this.value}}"
+                      placeholder="Actor name or Actor UUID"
+                    />
+                    <span
+                      class="ws-entry-status {{#if this.matchFound}}is-match{{else}}is-missing{{/if}}"
+                      title="{{#if this.matchFound}}Matching actor found{{else}}No matching actor found{{/if}}"
+                    >
+                      <i class="{{#if this.matchFound}}fas fa-check{{else}}fas fa-times{{/if}}"></i>
+                    </span>
+                    <button
+                      type="button"
+                      data-action="remove-form-ref"
+                      data-mapping-index="{{../index}}"
+                      data-form-ref-index="{{this.index}}"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                {{/each}}
+              {{else}}
+                <p class="notes">No forms configured for this mapping.</p>
+              {{/if}}
+            </div>
+          </div>
+        </article>
+      {{/each}}
+    {{else}}
+      <p class="notes">No mappings configured yet.</p>
+    {{/if}}
+  </section>
+
+  <footer class="sheet-footer flexrow">
+    <button type="submit" name="submit">Save Global Config</button>
+  </footer>
+</form>

@@ -1,6 +1,10 @@
 {
-  "MYMODULE.dog-browser": "Dog browser",
-  "MYMODULE.dogs": "Dogs",
-  "MYMODULE.fetch-random-dog": "Fetch random dog photo",
-  "MYMODULE.random-dog-alt": "Image of a random dog"
+  "WILDSHAPE.settings.globalConfig.name": "Wildshape Global Config",
+  "WILDSHAPE.settings.globalConfig.hint": "Core world-level mappings, permissions, and defaults for wildshape.",
+  "WILDSHAPE.settings.globalConfig.menu.name": "Wildshape Global Config",
+  "WILDSHAPE.settings.globalConfig.menu.hint": "Manage mappings, filters, forms, and override editor permissions.",
+  "WILDSHAPE.settings.globalConfig.menu.label": "Open Editor",
+  "WILDSHAPE.settings.playerOverride.menu.name": "Wildshape Player Override",
+  "WILDSHAPE.settings.playerOverride.menu.hint": "Manage your own form add/remove rules and filter overrides.",
+  "WILDSHAPE.settings.playerOverride.menu.label": "Open Personal Override"
 }

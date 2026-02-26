@@ -1,6 +1,11 @@
 import { ModuleData } from "@league-of-foundry-developers/foundry-vtt-types/src/foundry/common/packages.mjs";
-import DogBrowser from "./apps/dogBrowser";
+import type { WildshapeAdapter } from "./adapters/types";
 
-export interface MyModule extends Game.ModuleData<ModuleData> {
-  dogBrowser: DogBrowser;
+export interface WildshapeApi {
+  getActiveAdapter(): WildshapeAdapter | null;
+  handleItemUse(item: Item, targetUser?: User): Promise<boolean>;
+}
+
+export interface WildshapeModule extends Game.ModuleData<ModuleData> {
+  api: WildshapeApi;
 }

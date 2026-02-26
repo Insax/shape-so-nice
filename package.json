@@ -1,19 +1,23 @@
 {
-  "name": "foundry-module-ts",
-  "version": "1.0.0",
-  "description": "A template project for FoundryVTT modules using Typescript",
+  "name": "shape-so-nice",
+  "version": "0.1.0",
+  "description": "Wildshape Companion addon for Foundry VTT (Nimble-first)",
   "license": "MIT",
   "private": true,
   "scripts": {
     "build": "tsc && vite build",
-    "watch": "tsc && vite build --watch"
+    "watch": "tsc && vite build --watch",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage"
   },
   "devDependencies": {
     "@league-of-foundry-developers/foundry-vtt-types": "^9.280.0",
+    "@vitest/coverage-v8": "^4.0.18",
     "rollup-plugin-copy": "^3.4.0",
     "rollup-plugin-scss": "^3.0.0",
     "sass": "^1.54.8",
     "typescript": "^4.8.2",
-    "vite": "^3.2.7"
+    "vite": "^3.2.7",
+    "vitest": "^4.0.18"
   }
 }
