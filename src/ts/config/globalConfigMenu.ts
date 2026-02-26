@@ -2,16 +2,13 @@ import { MODULE_ID, SCHEMA_VERSION, SETTINGS_KEYS } from "../constants";
 import { getGlobalConfig, setGlobalConfig } from "./settings";
 import { normalizeGlobalConfig, normalizeString } from "./normalize";
 import { DEFAULT_WILDSHAPE_FILTERS } from "./defaults";
+import { isRecord } from "../utils/typeGuards";
 import type {
   FormRef,
   FormRefMode,
   GlobalConfig,
   WildshapeMapping,
 } from "./types";
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
 
 function cloneGlobalConfig(config: GlobalConfig): GlobalConfig {
   return JSON.parse(JSON.stringify(config)) as GlobalConfig;
@@ -125,6 +122,7 @@ function parseGlobalConfigDraftFromEditorData(
     },
     ui: {
       showDebugLogs: asBoolean(ui["showDebugLogs"], fallback.ui.showDebugLogs),
+      useChatFallback: asBoolean(ui["useChatFallback"], fallback.ui.useChatFallback ?? true),
     },
   };
 }
@@ -386,6 +384,7 @@ export class GlobalConfigMenu extends FormApplicationBase {
         })
       ),
       showDebugLogs: this.draftConfig.ui.showDebugLogs,
+      useChatFallback: this.draftConfig.ui.useChatFallback ?? true,
       mappings: this.draftConfig.mappings.map((mapping, mappingIndex) => ({
         index: mappingIndex,
         id: mapping.id,

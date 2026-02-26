@@ -41,6 +41,7 @@ export interface GlobalConfigPermissions {
 
 export interface GlobalConfigUi {
   showDebugLogs: boolean;
+  useChatFallback?: boolean;
 }
 
 export interface GlobalConfig {

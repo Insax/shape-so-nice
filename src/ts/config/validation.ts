@@ -1,13 +1,10 @@
 import { SCHEMA_VERSION } from "../constants";
+import { isRecord } from "../utils/typeGuards";
 import type {
   GlobalConfig,
   MappingTrigger,
   PlayerOverrideConfig,
 } from "./types";
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
 
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((entry) => typeof entry === "string");
@@ -116,6 +113,13 @@ export function isGlobalConfig(value: unknown): value is GlobalConfig {
 
   const ui = value["ui"];
   if (!isRecord(ui) || typeof ui["showDebugLogs"] !== "boolean") {
+    return false;
+  }
+
+  if (
+    ui["useChatFallback"] !== undefined &&
+    typeof ui["useChatFallback"] !== "boolean"
+  ) {
     return false;
   }
 

@@ -38,7 +38,7 @@ function defaultGlobalConfig(): GlobalConfig {
     version: SCHEMA_VERSION,
     mappings: [],
     permissions: { playerOverrideEditors: [] },
-    ui: { showDebugLogs: false },
+    ui: { showDebugLogs: false, useChatFallback: true },
   };
 }
 
@@ -172,14 +172,14 @@ describe("global config menu", () => {
         },
       ],
       permissions: { playerOverrideEditors: ["user-a", "user-b"] },
-      ui: { showDebugLogs: true },
+      ui: { showDebugLogs: true, useChatFallback: true },
     });
   });
 
   it("falls back for invalid editor inputs and removes incomplete mappings", () => {
     const fallback = {
       ...defaultGlobalConfig(),
-      ui: { showDebugLogs: true },
+      ui: { showDebugLogs: true, useChatFallback: true },
     };
     const output = buildGlobalConfigFromEditorData(
       {
@@ -208,7 +208,7 @@ describe("global config menu", () => {
       version: SCHEMA_VERSION,
       mappings: [],
       permissions: { playerOverrideEditors: [] },
-      ui: { showDebugLogs: false },
+      ui: { showDebugLogs: false, useChatFallback: true },
     });
   });
 
@@ -217,7 +217,7 @@ describe("global config menu", () => {
       {
         mappings: ["bad-entry", { id: 42, trigger: "bad", formRefs: ["bad"], defaultFilters: "bad" }],
         permissions: { playerOverrideEditors: [] },
-        ui: { showDebugLogs: false },
+        ui: { showDebugLogs: false, useChatFallback: true },
       },
       defaultGlobalConfig()
     );
@@ -232,7 +232,7 @@ describe("global config menu", () => {
       version: SCHEMA_VERSION,
       mappings: [],
       permissions: { playerOverrideEditors: [] },
-      ui: { showDebugLogs: false },
+      ui: { showDebugLogs: false, useChatFallback: true },
     });
   });
 
@@ -263,7 +263,7 @@ describe("global config menu", () => {
         },
       ],
       permissions: { playerOverrideEditors: ["u1", "u2"] },
-      ui: { showDebugLogs: true },
+      ui: { showDebugLogs: true, useChatFallback: true },
     });
 
     const menu = new GlobalConfigMenu();
@@ -316,7 +316,7 @@ describe("global config menu", () => {
         },
       ],
       permissions: { playerOverrideEditors: [] },
-      ui: { showDebugLogs: false },
+      ui: { showDebugLogs: false, useChatFallback: true },
     });
     (globalThis as Record<string, unknown>).game = {
       i18n: { localize: vi.fn(() => "Localized Title") },
@@ -343,7 +343,7 @@ describe("global config menu", () => {
         },
       ],
       permissions: { playerOverrideEditors: [] },
-      ui: { showDebugLogs: false },
+      ui: { showDebugLogs: false, useChatFallback: true },
     });
     (globalThis as Record<string, unknown>).game = {
       i18n: { localize: vi.fn(() => "Localized Title") },
@@ -444,7 +444,7 @@ describe("global config menu", () => {
         },
       ],
       permissions: { playerOverrideEditors: [] },
-      ui: { showDebugLogs: false },
+      ui: { showDebugLogs: false, useChatFallback: true },
     });
     (globalThis as Record<string, unknown>).game = {
       i18n: { localize: vi.fn(() => "Localized Title") },
@@ -578,7 +578,7 @@ describe("global config menu", () => {
         },
       ],
       permissions: { playerOverrideEditors: ["u1", "u2"] },
-      ui: { showDebugLogs: true },
+      ui: { showDebugLogs: true, useChatFallback: true },
     });
   });
 
@@ -972,7 +972,7 @@ describe("global config menu", () => {
         },
       ],
       permissions: { playerOverrideEditors: [] },
-      ui: { showDebugLogs: false },
+      ui: { showDebugLogs: false, useChatFallback: true },
     };
     menu.form = {
       __entries: [
@@ -1029,7 +1029,7 @@ describe("global config menu", () => {
       version: SCHEMA_VERSION,
       mappings: [],
       permissions: { playerOverrideEditors: ["u1"] },
-      ui: { showDebugLogs: true },
+      ui: { showDebugLogs: true, useChatFallback: true },
     });
     expect(uiMock.notifications.info).toHaveBeenCalledWith("Wildshape global config saved.");
   });

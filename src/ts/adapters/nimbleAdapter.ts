@@ -2,6 +2,7 @@ import { getEffectiveConfig } from "../config/effectiveConfig";
 import { normalizeString } from "../config/normalize";
 import { FLAG_SCOPE, LEGACY_FLAG_SCOPE } from "../constants";
 import type { ActorSnapshot, TransformPlan, WildshapeAdapter } from "./types";
+import { isRecord } from "../utils/typeGuards";
 
 const KEEP_SYSTEM_ROOT_KEYS = [
   "hp",
@@ -50,8 +51,77 @@ const FORM_TOKEN_KEYS = [
   "detectionModes",
 ] as const;
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
+const DIRECT_ITEM_USE_WRAP_FLAG = "__shapeSoNiceWildshapeWrappedActivate";
+const DIRECT_ITEM_USE_DEPTH_FLAG = "__shapeSoNiceWildshapeActivateDepth";
+const NIMBLE_ITEM_USE_HOOKS = [
+  "useItem",
+  "itemUse",
+  "itemUsageComplete",
+] as const;
+
+interface ItemDocumentClassRef {
+  prototype?: Record<string, unknown>;
+}
+
+function getNimbleItemDocumentClasses(): ItemDocumentClassRef[] {
+  const configRef = (globalThis as {
+    CONFIG?: {
+      Item?: {
+        documentClasses?: unknown;
+      };
+    };
+  }).CONFIG;
+  const documentClasses = configRef?.Item?.documentClasses;
+  if (!isRecord(documentClasses)) {
+    return [];
+  }
+
+  return Object.values(documentClasses).filter((itemClassRef): itemClassRef is ItemDocumentClassRef => {
+    if (
+      typeof itemClassRef !== "function" &&
+      !isRecord(itemClassRef)
+    ) {
+      return false;
+    }
+
+    return isRecord((itemClassRef as { prototype?: unknown }).prototype);
+  });
+}
+
+function isHookItemLike(value: unknown): value is Item {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  if (!("name" in value)) {
+    return false;
+  }
+
+  if ("items" in value) {
+    return false;
+  }
+
+  return true;
+}
+
+function extractHookItemFromArgs(args: unknown[]): Item | null {
+  for (const arg of args) {
+    if (
+      isRecord(arg) &&
+      "item" in arg &&
+      isHookItemLike((arg as { item?: unknown }).item)
+    ) {
+      return (arg as { item: Item }).item;
+    }
+  }
+
+  for (const arg of args) {
+    if (isHookItemLike(arg)) {
+      return arg;
+    }
+  }
+
+  return null;
 }
 
 function cloneValue<T>(value: T): T {
@@ -499,6 +569,115 @@ function isInjectedItemRef(item: AdapterItemRef): boolean {
   return isRecord(scopedFlags) && scopedFlags["injected"] === true;
 }
 
+function asString(value: unknown): string | null {
+  return typeof value === "string" ? value : null;
+}
+
+function getActorById(actorId: string): Actor | null {
+  const actorsCollection = (game as Game).actors as
+    | {
+        get?: (id: string) => Actor | null | undefined;
+        contents?: Actor[];
+      }
+    | undefined;
+  if (!actorsCollection) {
+    return null;
+  }
+
+  if (typeof actorsCollection.get === "function") {
+    return actorsCollection.get(actorId) ?? null;
+  }
+
+  const contents = Array.isArray(actorsCollection.contents)
+    ? actorsCollection.contents
+    : [];
+  return contents.find((actor) => actor.id === actorId) ?? null;
+}
+
+function extractNimbleItemNameFromChatMessage(
+  message: Record<string, unknown>,
+  actor: Actor
+): string | null {
+  const system = message["system"] as Record<string, unknown>;
+  const nameFromSystem =
+    asString(system["spellName"]) ?? asString(system["itemName"]) ?? asString(system["name"]);
+  if (nameFromSystem && nameFromSystem.trim().length > 0) {
+    return nameFromSystem.trim();
+  }
+
+  const flavor = asString(message["flavor"]);
+  if (!flavor || flavor.trim().length === 0) {
+    return null;
+  }
+
+  const actorName = actor.name?.trim();
+  if (actorName && flavor.startsWith(`${actorName}:`)) {
+    const itemName = flavor.slice(actorName.length + 1).trim();
+    return itemName.length > 0 ? itemName : null;
+  }
+
+  const separatorIndex = flavor.indexOf(":");
+  if (separatorIndex === -1) {
+    return null;
+  }
+
+  const itemName = flavor.slice(separatorIndex + 1).trim();
+  return itemName.length > 0 ? itemName : null;
+}
+
+function getConfiguredTriggerItemNames(): string[] {
+  const effectiveConfig = getEffectiveConfig();
+  const byNormalizedName = new Map<string, string>();
+
+  effectiveConfig.mappings.forEach((mapping) => {
+    if (mapping.trigger.mode !== "itemName") {
+      return;
+    }
+
+    const triggerName = normalizeString(mapping.trigger.value);
+    if (!triggerName) {
+      return;
+    }
+
+    const normalizedTriggerName = normalizeFilterName(triggerName);
+    if (!byNormalizedName.has(normalizedTriggerName)) {
+      byNormalizedName.set(normalizedTriggerName, triggerName);
+    }
+  });
+
+  return [...byNormalizedName.values()];
+}
+
+function getActorItemNameSet(actor: Actor): Set<string> {
+  const names = new Set<string>();
+
+  getActorItems(actor).forEach((item) => {
+    const normalizedName = normalizeFilterName(item.name ?? "");
+    if (!normalizedName) {
+      return;
+    }
+    names.add(normalizedName);
+  });
+
+  return names;
+}
+
+function toEnsuredWildshapeActionPayload(itemName: string): Record<string, unknown> {
+  return {
+    name: itemName,
+    type: "feature",
+    system: {
+      featureType: "class",
+    },
+    flags: {
+      [FLAG_SCOPE]: {
+        injected: true,
+        ensuredAction: true,
+      },
+    },
+  };
+}
+
 function filterItemIdsByRules(
   actor: Actor,
   filters: { whitelist: string[]; blacklist: string[] },
@@ -840,6 +1019,14 @@ export class NimbleAdapter implements WildshapeAdapter {
     return (game as Game).system.id === this.id;
   }
 
+  public getItemUseHooks(): readonly string[] {
+    return NIMBLE_ITEM_USE_HOOKS;
+  }
+
+  public extractItemFromHookArgs(_hookName: string, args: unknown[]): Item | null {
+    return extractHookItemFromArgs(args);
+  }
+
   public isWildshapeTrigger(item: Item): boolean {
     const itemName = normalizeString(item.name ?? "").toLowerCase();
     if (!itemName) {
@@ -852,6 +1039,97 @@ export class NimbleAdapter implements WildshapeAdapter {
         mapping.trigger.mode === "itemName" &&
         normalizeString(mapping.trigger.value).toLowerCase() === itemName
     );
+  }
+
+  public registerDirectItemUseListener(onItemUse: (item: Item) => void): boolean {
+    let wrappedCount = 0;
+
+    getNimbleItemDocumentClasses().forEach((itemClassRef) => {
+      const prototypeRef = itemClassRef.prototype;
+      if (!isRecord(prototypeRef)) {
+        return;
+      }
+
+      if (prototypeRef[DIRECT_ITEM_USE_WRAP_FLAG] === true) {
+        return;
+      }
+
+      const activate = prototypeRef["activate"];
+      if (typeof activate !== "function") {
+        return;
+      }
+
+      const originalActivate = activate as (
+        this: Item & Record<string, unknown>,
+        ...args: unknown[]
+      ) => Promise<unknown> | unknown;
+
+      prototypeRef["activate"] = async function wrappedItemActivate(
+        this: Item & Record<string, unknown>,
+        ...args: unknown[]
+      ): Promise<unknown> {
+        const currentDepthValue = this[DIRECT_ITEM_USE_DEPTH_FLAG];
+        const depth = typeof currentDepthValue === "number" ? currentDepthValue : 0;
+        this[DIRECT_ITEM_USE_DEPTH_FLAG] = depth + 1;
+
+        try {
+          const result = await originalActivate.apply(this, args);
+          if (depth === 0 && result !== null && result !== undefined) {
+            try {
+              onItemUse(this as Item);
+            } catch {
+              // Never break item activation flow because of module listeners.
+            }
+          }
+          return result;
+        } finally {
+          const depthValue = this[DIRECT_ITEM_USE_DEPTH_FLAG];
+          const nextDepth = typeof depthValue === "number" ? depthValue - 1 : 0;
+          if (nextDepth <= 0) {
+            delete this[DIRECT_ITEM_USE_DEPTH_FLAG];
+          } else {
+            this[DIRECT_ITEM_USE_DEPTH_FLAG] = nextDepth;
+          }
+        }
+      };
+
+      prototypeRef[DIRECT_ITEM_USE_WRAP_FLAG] = true;
+      wrappedCount += 1;
+    });
+
+    return wrappedCount > 0;
+  }
+
+  public extractItemFromChatMessage(message: unknown): Item | null {
+    if (!isRecord(message)) {
+      return null;
+    }
+
+    const system = isRecord(message["system"]) ? message["system"] : null;
+    if (!system || !("activation" in system || typeof system["spellName"] === "string")) {
+      return null;
+    }
+
+    const speaker = isRecord(message["speaker"]) ? message["speaker"] : null;
+    const actorId = speaker ? asString(speaker["actor"]) : null;
+    if (!actorId) {
+      return null;
+    }
+
+    const actor = getActorById(actorId);
+    if (!actor) {
+      return null;
+    }
+
+    const itemName = extractNimbleItemNameFromChatMessage(message, actor);
+    if (!itemName) {
+      return null;
+    }
+
+    return {
+      name: itemName,
+      actor,
+    } as Item;
   }
 
   public async getActorSnapshot(actor: Actor): Promise<ActorSnapshot> {
@@ -973,5 +1251,36 @@ export class NimbleAdapter implements WildshapeAdapter {
     await syncActiveTokenDocuments(_actor, _snapshot.prototypeToken);
   }
 
-  public async ensureWildshapeAction(_actor: Actor): Promise<void> {}
+  public async ensureWildshapeAction(_actor: Actor): Promise<void> {
+    const configuredTriggerNames = getConfiguredTriggerItemNames();
+    if (configuredTriggerNames.length === 0) {
+      return;
+    }
+
+    const existingNames = getActorItemNameSet(_actor);
+    const missingNames = configuredTriggerNames.filter(
+      (name) => !existingNames.has(normalizeFilterName(name))
+    );
+    if (missingNames.length === 0) {
+      return;
+    }
+
+    const createEmbeddedDocuments = (
+      _actor as unknown as {
+        createEmbeddedDocuments?: (
+          documentName: string,
+          data: Record<string, unknown>[]
+        ) => Promise<unknown> | unknown;
+      }
+    ).createEmbeddedDocuments;
+    if (typeof createEmbeddedDocuments !== "function") {
+      return;
+    }
+
+    await createEmbeddedDocuments.call(
+      _actor,
+      "Item",
+      missingNames.map((name) => toEnsuredWildshapeActionPayload(name))
+    );
+  }
 }

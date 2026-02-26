@@ -1,5 +1,7 @@
 import type { ActorSnapshot } from "../adapters/types";
 import { FLAG_KEYS, LEGACY_FLAG_SCOPE, MODULE_ID, SCHEMA_VERSION } from "../constants";
+import { logWarning } from "./logger";
+import { isRecord } from "../utils/typeGuards";
 
 export interface WildshapeActorState {
   version: number;
@@ -8,10 +10,6 @@ export interface WildshapeActorState {
   currentFormActorId: string;
   currentFormName: string;
   snapshot: ActorSnapshot | null;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
 }
 
 function getLegacyStateFlag(actor: Actor): unknown {
@@ -34,7 +32,7 @@ function parseStatePayload(actor: Actor, rawState: unknown): WildshapeActorState
   }
 
   if (!isWildshapeActorState(rawState)) {
-    console.warn(`[${MODULE_ID}] Invalid wildshape actor state detected.`, {
+    logWarning("wildshape.state.invalidPayload", {
       actorId: actor.id,
       payload: rawState,
     });

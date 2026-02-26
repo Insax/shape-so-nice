@@ -1,18 +1,24 @@
 import { MODULE_ID } from "../constants";
+import { getGlobalConfig } from "../config/settings";
 import { debugAlert, logError } from "./logger";
 import { handleWildshapeItemUse } from "./triggerHandler";
 import type { WildshapeAdapter } from "../adapters/types";
+import { isRecord } from "../utils/typeGuards";
 
-const ITEM_USE_HOOKS = [
+const DEFAULT_ITEM_USE_HOOKS = [
   "useItem",
   "itemUse",
   "itemUsageComplete",
-  "nimble.useItem",
 ] as const;
 const CHAT_MESSAGE_FALLBACK_HOOK = "createChatMessage" as const;
+const DIRECT_ITEM_USE_SOURCE = "adapter.directItemUse" as const;
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
+function isChatFallbackEnabled(): boolean {
+  try {
+    return getGlobalConfig().ui.useChatFallback ?? true;
+  } catch {
+    return true;
+  }
 }
 
 function isItemLike(value: unknown): value is Item {
@@ -48,99 +54,65 @@ function extractItemFromArgs(args: unknown[]): Item | null {
   return null;
 }
 
-function asString(value: unknown): string | null {
-  return typeof value === "string" ? value : null;
-}
+function resolveItemUseHooks(adapter: WildshapeAdapter | null): string[] {
+  const hooksFromAdapter =
+    adapter && typeof adapter.getItemUseHooks === "function"
+      ? adapter.getItemUseHooks()
+      : null;
 
-function getActorById(actorId: string): Actor | null {
-  const actorsCollection = (game as Game).actors as
-    | {
-        get?: (id: string) => Actor | null | undefined;
-        contents?: Actor[];
-      }
-    | undefined;
-  if (!actorsCollection) {
-    return null;
-  }
+  const candidateHooks = Array.isArray(hooksFromAdapter)
+    ? hooksFromAdapter
+    : [...DEFAULT_ITEM_USE_HOOKS];
+  const normalized = candidateHooks
+    .filter((value): value is string => typeof value === "string")
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0);
 
-  if (typeof actorsCollection.get === "function") {
-    return actorsCollection.get(actorId) ?? null;
-  }
-
-  const contents = Array.isArray(actorsCollection.contents)
-    ? actorsCollection.contents
-    : [];
-  return contents.find((actor) => actor.id === actorId) ?? null;
-}
-
-function extractItemNameFromChatMessage(message: Record<string, unknown>, actor: Actor): string | null {
-  const system = message["system"] as Record<string, unknown>;
-  const nameFromSystem =
-    asString(system["spellName"]) ?? asString(system["itemName"]) ?? asString(system["name"]);
-  if (nameFromSystem && nameFromSystem.trim().length > 0) {
-    return nameFromSystem.trim();
-  }
-
-  const flavor = asString(message["flavor"]);
-  if (!flavor || flavor.trim().length === 0) {
-    return null;
-  }
-
-  const actorName = actor.name?.trim();
-  if (actorName && flavor.startsWith(`${actorName}:`)) {
-    const itemName = flavor.slice(actorName.length + 1).trim();
-    return itemName.length > 0 ? itemName : null;
-  }
-
-  const separatorIndex = flavor.indexOf(":");
-  if (separatorIndex === -1) {
-    return null;
-  }
-
-  const itemName = flavor.slice(separatorIndex + 1).trim();
-  return itemName.length > 0 ? itemName : null;
-}
-
-function extractItemFromChatMessage(message: unknown): Item | null {
-  if (!isRecord(message)) {
-    return null;
-  }
-
-  const system = isRecord(message["system"]) ? message["system"] : null;
-  if (!system || !("activation" in system || typeof system["spellName"] === "string")) {
-    return null;
-  }
-
-  const speaker = isRecord(message["speaker"]) ? message["speaker"] : null;
-  const actorId = speaker ? asString(speaker["actor"]) : null;
-  if (!actorId) {
-    return null;
-  }
-
-  const actor = getActorById(actorId);
-  if (!actor) {
-    return null;
-  }
-
-  const itemName = extractItemNameFromChatMessage(message, actor);
-  if (!itemName) {
-    return null;
-  }
-
-  return {
-    name: itemName,
-    actor,
-  } as Item;
+  return normalized.length > 0 ? [...new Set(normalized)] : [...DEFAULT_ITEM_USE_HOOKS];
 }
 
 export function registerWildshapeHooks(
   getAdapter: () => WildshapeAdapter | null
 ): void {
-  ITEM_USE_HOOKS.forEach((hookName) => {
+  const adapter = getAdapter();
+  const itemUseHooks = resolveItemUseHooks(adapter);
+  const directItemUseEnabled =
+    adapter && typeof adapter.registerDirectItemUseListener === "function"
+      ? adapter.registerDirectItemUseListener((item) => {
+          void handleWildshapeItemUse(item, getAdapter()).catch((error: unknown) => {
+            const message = error instanceof Error ? error.message : String(error);
+            logError("wildshape.trigger.failed", {
+              hookName: DIRECT_ITEM_USE_SOURCE,
+              error: message,
+            });
+            debugAlert(`hook error in ${DIRECT_ITEM_USE_SOURCE}: ${message}`);
+          });
+        })
+      : false;
+
+  itemUseHooks.forEach((hookName) => {
     Hooks.on(hookName, (...args: unknown[]) => {
       debugAlert(`hook fired: ${hookName}`);
 
-      const item = extractItemFromArgs(args);
+      let item: Item | null = null;
+      if (adapter && typeof adapter.extractItemFromHookArgs === "function") {
+        try {
+          item = adapter.extractItemFromHookArgs(hookName, args);
+        } catch (error: unknown) {
+          const message = error instanceof Error ? error.message : String(error);
+          logError("wildshape.trigger.failed", {
+            hookName,
+            error: message,
+          });
+          debugAlert(`hook error in ${hookName}: ${message}`);
+          return;
+        }
+      }
+
+      if (!item) {
+        item = extractItemFromArgs(args);
+      }
+
       if (!item) {
         debugAlert(`hook ignored (no item extracted): ${hookName}`);
         return;
@@ -160,17 +132,42 @@ export function registerWildshapeHooks(
   });
 
   Hooks.on(CHAT_MESSAGE_FALLBACK_HOOK, (...args: unknown[]) => {
+    if (directItemUseEnabled) {
+      return;
+    }
+
+    if (!isChatFallbackEnabled()) {
+      return;
+    }
+
     debugAlert(`hook fired: ${CHAT_MESSAGE_FALLBACK_HOOK}`);
 
     const adapter = getAdapter();
-    if (!adapter || adapter.id !== "nimble") {
+    if (!adapter) {
+      debugAlert("chat fallback ignored (no active adapter)");
+      return;
+    }
+
+    if (typeof adapter.extractItemFromChatMessage !== "function") {
       debugAlert(
-        `chat fallback ignored (adapter mismatch: ${adapter?.id ?? "none"})`
+        `chat fallback ignored (adapter cannot parse chat: ${adapter.id})`
       );
       return;
     }
 
-    const item = extractItemFromChatMessage(args[0]);
+    let item: Item | null = null;
+    try {
+      item = adapter.extractItemFromChatMessage(args[0]);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      logError("wildshape.trigger.failed", {
+        hookName: CHAT_MESSAGE_FALLBACK_HOOK,
+        error: message,
+      });
+      debugAlert(`hook error in ${CHAT_MESSAGE_FALLBACK_HOOK}: ${message}`);
+      return;
+    }
+
     if (!item) {
       debugAlert("chat fallback ignored (no item extracted)");
       return;
@@ -190,7 +187,7 @@ export function registerWildshapeHooks(
 }
 
 export function getRegisteredItemUseHooks(): readonly string[] {
-  return ITEM_USE_HOOKS;
+  return DEFAULT_ITEM_USE_HOOKS;
 }
 
 export function getModuleHookDebugContext(): { moduleId: string } {

@@ -1,7 +1,7 @@
 import { getEffectiveConfig } from "../config/effectiveConfig";
 import { normalizeString } from "../config/normalize";
 import type { EffectiveMapping, FormRef } from "../config/types";
-import { MODULE_ID } from "../constants";
+import { logWarning } from "./logger";
 
 function getActors(): Actor[] {
   const actorsCollection = (game as Game).actors as unknown as {
@@ -38,7 +38,7 @@ export function resolveFormActors(formRefs: FormRef[]): Actor[] {
         : resolveActorByName(actors, formRef.value);
 
     if (!resolvedActor) {
-      console.warn(`[${MODULE_ID}] Missing form actor reference.`, {
+      logWarning("wildshape.formResolver.missingFormRef", {
         formRef,
       });
       continue;

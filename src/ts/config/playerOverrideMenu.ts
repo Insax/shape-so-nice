@@ -6,6 +6,7 @@ import {
   setPlayerOverrideConfig,
 } from "./playerOverride";
 import { normalizePlayerOverrideConfig, normalizeString } from "./normalize";
+import { isRecord } from "../utils/typeGuards";
 import type {
   FormRef,
   FormRefMode,
@@ -13,10 +14,6 @@ import type {
   PlayerOverrideMapping,
   WildshapeMapping,
 } from "./types";
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
 
 function toIndexedArray(value: unknown): unknown[] {
   if (Array.isArray(value)) {

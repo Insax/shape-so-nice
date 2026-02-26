@@ -28,7 +28,7 @@ function buildRawConfig(): GlobalConfig {
     permissions: {
       playerOverrideEditors: [" user-a ", "user-a", "  "],
     },
-    ui: { showDebugLogs: true },
+    ui: { showDebugLogs: true, useChatFallback: true },
   };
 }
 
@@ -42,6 +42,7 @@ describe("settings service", () => {
     register.mockReset();
     get.mockReset();
     set.mockReset();
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
 
     (globalThis as Record<string, unknown>).foundry = {
       utils: {
@@ -114,6 +115,68 @@ describe("settings service", () => {
     expect(warnSpy).toHaveBeenCalledTimes(1);
   });
 
+  it("migrates legacy global config and persists when current user is GM", async () => {
+    get.mockReturnValueOnce({
+      mappings: [],
+      permissions: { playerOverrideEditors: ["user-a"] },
+      ui: { showDebugLogs: true },
+    });
+    set.mockResolvedValue(undefined);
+
+    const result = getGlobalConfig();
+
+    expect(result).toEqual({
+      version: SCHEMA_VERSION,
+      mappings: [],
+      permissions: { playerOverrideEditors: ["user-a"] },
+      ui: { showDebugLogs: true, useChatFallback: true },
+    });
+    expect(set).toHaveBeenCalledWith(MODULE_ID, SETTINGS_KEYS.GLOBAL_CONFIG, {
+      version: SCHEMA_VERSION,
+      mappings: [],
+      permissions: { playerOverrideEditors: ["user-a"] },
+      ui: { showDebugLogs: true, useChatFallback: true },
+    });
+  });
+
+  it("migrates legacy global config without persisting when current user is not GM", () => {
+    const testGame = (globalThis as Record<string, unknown>).game as {
+      user: { isGM: boolean };
+    };
+    testGame.user.isGM = false;
+    get.mockReturnValueOnce({
+      mappings: [],
+      permissions: { playerOverrideEditors: ["user-a"] },
+      ui: { showDebugLogs: true },
+    });
+
+    const result = getGlobalConfig();
+
+    expect(result).toEqual({
+      version: SCHEMA_VERSION,
+      mappings: [],
+      permissions: { playerOverrideEditors: ["user-a"] },
+      ui: { showDebugLogs: true, useChatFallback: true },
+    });
+    expect(set).not.toHaveBeenCalled();
+  });
+
+  it("logs a warning when migrated global config persistence fails", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    get.mockReturnValueOnce({
+      mappings: [],
+      permissions: { playerOverrideEditors: [] },
+      ui: { showDebugLogs: false },
+    });
+    set.mockRejectedValueOnce(new Error("persist failed"));
+
+    getGlobalConfig();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(warnSpy).toHaveBeenCalled();
+  });
+
   it("blocks global config updates from non-GM users", async () => {
     const testGame = (globalThis as Record<string, unknown>).game as {
       user: { isGM: boolean };
@@ -155,7 +218,7 @@ describe("settings service", () => {
         },
       ],
       permissions: { playerOverrideEditors: ["user-a"] },
-      ui: { showDebugLogs: true },
+      ui: { showDebugLogs: true, useChatFallback: true },
     });
   });
 });

@@ -8,9 +8,15 @@ import {
 const { getEffectiveConfigMock } = vi.hoisted(() => ({
   getEffectiveConfigMock: vi.fn(),
 }));
+const { logWarningMock } = vi.hoisted(() => ({
+  logWarningMock: vi.fn(),
+}));
 
 vi.mock("@/ts/config/effectiveConfig", () => ({
   getEffectiveConfig: getEffectiveConfigMock,
+}));
+vi.mock("@/ts/core/logger", () => ({
+  logWarning: logWarningMock,
 }));
 
 function actor(id: string | null, name: string, uuid?: string): Actor {
@@ -25,6 +31,7 @@ describe("formResolver", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     getEffectiveConfigMock.mockReset();
+    logWarningMock.mockReset();
     (globalThis as Record<string, unknown>).game = {
       actors: {
         contents: [
@@ -56,13 +63,13 @@ describe("formResolver", () => {
       actors: {},
     };
 
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     expect(resolveFormActors([{ mode: "uuid", value: "Actor.a1" }])).toEqual([]);
-    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(logWarningMock).toHaveBeenCalledWith("wildshape.formResolver.missingFormRef", {
+      formRef: { mode: "uuid", value: "Actor.a1" },
+    });
   });
 
   it("warns on missing refs and dedupes duplicate actor matches", () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const result = resolveFormActors([
       { mode: "name", value: "Wolf Form" },
       { mode: "uuid", value: "Actor.a1" },
@@ -70,7 +77,10 @@ describe("formResolver", () => {
     ]);
 
     expect(result.map((entry) => entry.id)).toEqual(["a1"]);
-    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(logWarningMock).toHaveBeenCalledTimes(1);
+    expect(logWarningMock).toHaveBeenCalledWith("wildshape.formResolver.missingFormRef", {
+      formRef: { mode: "name", value: "Missing Form" },
+    });
   });
 
   it("ignores resolved actors that have no id", () => {

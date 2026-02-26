@@ -67,7 +67,7 @@ describe("normalize helpers", () => {
           },
         ],
         permissions: { playerOverrideEditors: [" user-1 ", "user-1", " "] },
-        ui: { showDebugLogs: true },
+        ui: { showDebugLogs: true, useChatFallback: true },
       })
     ).toEqual({
       version: SCHEMA_VERSION,
@@ -76,12 +76,12 @@ describe("normalize helpers", () => {
           id: "map_1",
           trigger: { mode: "itemName", value: "Wildshape" },
           formRefs: [{ mode: "name", value: "Wolf Form" }],
-          defaultFilters: { whitelist: ["Bite"], blacklist: ["type:weapon"] },
+          defaultFilters: { whitelist: ["Bite"], blacklist: ["objectType:weapon"] },
           formAbilityUuids: ["Actor.wolf-id.Item.bite-id"],
         },
       ],
       permissions: { playerOverrideEditors: ["user-1"] },
-      ui: { showDebugLogs: true },
+      ui: { showDebugLogs: true, useChatFallback: true },
     });
   });
 

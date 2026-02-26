@@ -185,6 +185,16 @@ describe("isGlobalConfig", () => {
         ui: { showDebugLogs: "yes" } as unknown as GlobalConfig["ui"],
       })
     ).toBe(false);
+
+    expect(
+      isGlobalConfig({
+        ...validConfig(),
+        ui: {
+          showDebugLogs: true,
+          useChatFallback: "enabled",
+        } as unknown as GlobalConfig["ui"],
+      })
+    ).toBe(false);
   });
 
   it("rejects non-object values", () => {

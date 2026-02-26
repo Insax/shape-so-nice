@@ -10,6 +10,10 @@ const { handleWildshapeItemUseMock } = vi.hoisted(() => ({
   handleWildshapeItemUseMock: vi.fn(),
 }));
 
+const { getGlobalConfigMock } = vi.hoisted(() => ({
+  getGlobalConfigMock: vi.fn(),
+}));
+
 const { logErrorMock } = vi.hoisted(() => ({
   logErrorMock: vi.fn(),
 }));
@@ -20,6 +24,9 @@ const { debugAlertMock } = vi.hoisted(() => ({
 vi.mock("@/ts/core/triggerHandler", () => ({
   handleWildshapeItemUse: handleWildshapeItemUseMock,
 }));
+vi.mock("@/ts/config/settings", () => ({
+  getGlobalConfig: getGlobalConfigMock,
+}));
 vi.mock("@/ts/core/logger", () => ({
   logError: logErrorMock,
   debugAlert: debugAlertMock,
@@ -27,9 +34,24 @@ vi.mock("@/ts/core/logger", () => ({
 
 type HookCallbackMap = Record<string, (...args: unknown[]) => void>;
 
+function createAdapter(input?: {
+  id?: string;
+  parser?: (message: unknown) => Item | null;
+  registerDirect?: (onItemUse: (item: Item) => void) => boolean;
+  extractFromHookArgs?: (hookName: string, args: unknown[]) => Item | null;
+  itemUseHooks?: readonly string[];
+}) {
+  return {
+    id: input?.id ?? "test-adapter",
+    extractItemFromChatMessage: input?.parser,
+    registerDirectItemUseListener: input?.registerDirect,
+    extractItemFromHookArgs: input?.extractFromHookArgs,
+    getItemUseHooks: input?.itemUseHooks ? () => input.itemUseHooks! : undefined,
+  } as unknown as never;
+}
+
 describe("hooks", () => {
   let callbacks: HookCallbackMap;
-  let actorsById: Record<string, Actor>;
 
   beforeEach(() => {
     vi.restoreAllMocks();
@@ -37,34 +59,27 @@ describe("hooks", () => {
     callbacks = {};
     handleWildshapeItemUseMock.mockResolvedValue(false);
     debugAlertMock.mockReset();
-    actorsById = {
-      "a1": { id: "a1", name: "Druid" } as Actor,
-      "a2": { id: "a2", name: "Beast" } as Actor,
-    };
+    getGlobalConfigMock.mockReset();
+    getGlobalConfigMock.mockReturnValue({
+      version: 1,
+      mappings: [],
+      permissions: { playerOverrideEditors: [] },
+      ui: { showDebugLogs: false, useChatFallback: true },
+    });
 
     (globalThis as Record<string, unknown>).Hooks = {
       on: vi.fn((event: string, callback: (...args: unknown[]) => void) => {
         callbacks[event] = callback;
       }),
     };
-    (globalThis as Record<string, unknown>).game = {
-      actors: {
-        get: vi.fn((id: string) => actorsById[id] ?? null),
-      },
-    };
   });
 
   it("exposes static hook metadata", () => {
-    expect(getRegisteredItemUseHooks()).toEqual([
-      "useItem",
-      "itemUse",
-      "itemUsageComplete",
-      "nimble.useItem",
-    ]);
+    expect(getRegisteredItemUseHooks()).toEqual(["useItem", "itemUse", "itemUsageComplete"]);
     expect(getModuleHookDebugContext()).toEqual({ moduleId: MODULE_ID });
   });
 
-  it("registers callbacks for all item-use hooks", () => {
+  it("registers callbacks for all item-use hooks and chat fallback", () => {
     registerWildshapeHooks(() => null);
     expect(Object.keys(callbacks)).toEqual([
       ...getRegisteredItemUseHooks(),
@@ -72,19 +87,59 @@ describe("hooks", () => {
     ]);
   });
 
-  it("ignores events that do not contain an item-like payload", async () => {
-    registerWildshapeHooks(() => ({ id: "nimble" } as unknown as never));
+  it("registers adapter-provided item-use hooks when present", () => {
+    registerWildshapeHooks(() =>
+      createAdapter({
+        itemUseHooks: ["custom.itemUse", "custom.itemUse.after"],
+      })
+    );
+    expect(Object.keys(callbacks)).toEqual([
+      "custom.itemUse",
+      "custom.itemUse.after",
+      "createChatMessage",
+    ]);
+  });
+
+  it("falls back to default item-use hooks when adapter hook list is empty/invalid", () => {
+    registerWildshapeHooks(() =>
+      createAdapter({
+        itemUseHooks: ["", "   ", "custom", "custom"] as unknown as readonly string[],
+      })
+    );
+    expect(Object.keys(callbacks)).toEqual(["custom", "createChatMessage"]);
+
+    callbacks = {};
+    (globalThis as Record<string, unknown>).Hooks = {
+      on: vi.fn((event: string, callback: (...args: unknown[]) => void) => {
+        callbacks[event] = callback;
+      }),
+    };
+
+    registerWildshapeHooks(() =>
+      createAdapter({
+        itemUseHooks: ["", "   "] as unknown as readonly string[],
+      })
+    );
+
+    expect(Object.keys(callbacks)).toEqual([
+      ...getRegisteredItemUseHooks(),
+      "createChatMessage",
+    ]);
+  });
+
+  it("ignores item-use events that do not contain an item-like payload", async () => {
+    registerWildshapeHooks(() => createAdapter());
     callbacks.useItem("not-item");
     callbacks.useItem({ item: { bad: true } });
     callbacks.useItem({ name: "Actor Payload", items: [] });
-    callbacks.createChatMessage({});
     await Promise.resolve();
 
     expect(handleWildshapeItemUseMock).not.toHaveBeenCalled();
   });
 
   it("extracts direct item payloads and nested payload.item", async () => {
-    registerWildshapeHooks(() => ({ id: "nimble" } as unknown as never));
+    const adapter = createAdapter();
+    registerWildshapeHooks(() => adapter);
     callbacks.itemUse({ name: "Wildshape", actor: { id: "a1" } });
     callbacks.itemUsageComplete({ item: { name: "Wildshape 2", actor: { id: "a2" } } });
     callbacks.useItem(
@@ -97,221 +152,324 @@ describe("hooks", () => {
     expect(handleWildshapeItemUseMock).toHaveBeenNthCalledWith(
       1,
       { name: "Wildshape", actor: { id: "a1" } },
-      { id: "nimble" }
+      adapter
     );
     expect(handleWildshapeItemUseMock).toHaveBeenNthCalledWith(
       2,
       { name: "Wildshape 2", actor: { id: "a2" } },
-      { id: "nimble" }
+      adapter
     );
     expect(handleWildshapeItemUseMock).toHaveBeenNthCalledWith(
       3,
       { name: "Wildshape 3", actor: { id: "a1" } },
-      { id: "nimble" }
+      adapter
     );
   });
 
-  it("uses Nimble chat-message fallback when message contains activation context", async () => {
-    registerWildshapeHooks(() => ({ id: "nimble" } as unknown as never));
-    callbacks.createChatMessage({
-      speaker: { actor: "a1" },
-      system: { activation: {}, spellName: "Wildshape" },
-      flavor: "Druid: Wildshape",
+  it("uses adapter hook-arg extractor before generic fallback", async () => {
+    const adapter = createAdapter({
+      extractFromHookArgs: vi.fn((_hookName, args) => {
+        const payload = args[0] as { mappedItem?: Item };
+        return payload.mappedItem ?? null;
+      }),
     });
-    callbacks.createChatMessage({
-      speaker: { actor: "a1" },
-      system: { activation: {} },
-      flavor: "Druid: Beast Shape",
-    });
+    registerWildshapeHooks(() => adapter);
+    callbacks.useItem({ mappedItem: { name: "Wildshape", actor: { id: "a1" } } });
     await Promise.resolve();
 
-    expect(handleWildshapeItemUseMock).toHaveBeenCalledTimes(2);
-    expect(handleWildshapeItemUseMock).toHaveBeenNthCalledWith(
-      1,
-      { name: "Wildshape", actor: actorsById["a1"] },
-      { id: "nimble" }
-    );
-    expect(handleWildshapeItemUseMock).toHaveBeenNthCalledWith(
-      2,
-      { name: "Beast Shape", actor: actorsById["a1"] },
-      { id: "nimble" }
+    expect(handleWildshapeItemUseMock).toHaveBeenCalledWith(
+      { name: "Wildshape", actor: { id: "a1" } },
+      adapter
     );
   });
 
-  it("ignores chat fallback when adapter is non-nimble or payload is incomplete", async () => {
-    registerWildshapeHooks(() => null);
-    callbacks.createChatMessage({
-      speaker: { actor: "a1" },
-      system: { activation: {}, spellName: "Wildshape" },
-      flavor: "Druid: Wildshape",
-    });
-
-    registerWildshapeHooks(() => ({ id: "other" } as unknown as never));
-    callbacks.createChatMessage({
-      speaker: { actor: "a1" },
-      system: { activation: {}, spellName: "Wildshape" },
-      flavor: "Druid: Wildshape",
-    });
-
-    registerWildshapeHooks(() => ({ id: "nimble" } as unknown as never));
-    callbacks.createChatMessage("not-a-record");
-    callbacks.createChatMessage({
-      speaker: { actor: "missing" },
-      system: { activation: {}, spellName: "Wildshape" },
-      flavor: "Druid: Wildshape",
-    });
-    callbacks.createChatMessage({
-      speaker: { actor: "a1" },
-      system: {},
-      flavor: "Druid: Wildshape",
-    });
-    callbacks.createChatMessage({
-      speaker: { actor: "a1" },
-      system: { activation: {} },
-      flavor: "No Delimiter",
-    });
-    callbacks.createChatMessage({
-      speaker: { actor: 123 },
-      system: { activation: {} },
-      flavor: "Druid: Wildshape",
-    });
-    callbacks.createChatMessage({
-      speaker: { actor: "a1" },
-      system: { activation: {} },
-      flavor: "Druid:",
-    });
-    callbacks.createChatMessage({
-      speaker: { actor: "a1" },
-      system: { activation: {} },
-      flavor: "Other:",
-    });
-    callbacks.createChatMessage({
-      speaker: { actor: "a1" },
-      system: { activation: {} },
-    });
-    callbacks.createChatMessage({
-      system: { activation: {}, spellName: "Wildshape" },
-      flavor: "Druid: Wildshape",
-    });
-    callbacks.createChatMessage({
-      speaker: { actor: "a1" },
-      system: "bad",
-      flavor: "Druid: Wildshape",
-    });
+  it("logs adapter hook-arg extractor errors and skips trigger handling", async () => {
+    registerWildshapeHooks(() =>
+      createAdapter({
+        extractFromHookArgs: () => {
+          throw new Error("bad hook args");
+        },
+      })
+    );
+    callbacks.useItem({ name: "Wildshape", actor: { id: "a1" } });
     await Promise.resolve();
 
     expect(handleWildshapeItemUseMock).not.toHaveBeenCalled();
+    expect(logErrorMock).toHaveBeenCalledWith("wildshape.trigger.failed", {
+      hookName: "useItem",
+      error: "bad hook args",
+    });
+    expect(debugAlertMock).toHaveBeenCalledWith("hook error in useItem: bad hook args");
   });
 
-  it("parses chat flavor with generic actor prefix separator", async () => {
-    registerWildshapeHooks(() => ({ id: "nimble" } as unknown as never));
-    callbacks.createChatMessage({
-      speaker: { actor: "a1" },
-      system: { activation: {} },
-      flavor: "Someone Else: Wildshape from Flavor",
-    });
+  it("uses adapter chat parser when chat fallback is enabled", async () => {
+    const parserMock = vi
+      .fn()
+      .mockReturnValueOnce({ name: "Wildshape", actor: { id: "a1" } })
+      .mockReturnValueOnce({ name: "Beast Shape", actor: { id: "a1" } });
+    const adapter = createAdapter({ parser: parserMock });
+    registerWildshapeHooks(() => adapter);
+
+    callbacks.createChatMessage({ kind: "first" });
+    callbacks.createChatMessage({ kind: "second" });
     await Promise.resolve();
 
-    expect(handleWildshapeItemUseMock).toHaveBeenCalledWith(
-      { name: "Wildshape from Flavor", actor: actorsById["a1"] },
-      { id: "nimble" }
+    expect(parserMock).toHaveBeenNthCalledWith(1, { kind: "first" });
+    expect(parserMock).toHaveBeenNthCalledWith(2, { kind: "second" });
+    expect(handleWildshapeItemUseMock).toHaveBeenNthCalledWith(
+      1,
+      { name: "Wildshape", actor: { id: "a1" } },
+      adapter
+    );
+    expect(handleWildshapeItemUseMock).toHaveBeenNthCalledWith(
+      2,
+      { name: "Beast Shape", actor: { id: "a1" } },
+      adapter
     );
   });
 
-  it("falls back to flavor parsing when system name is blank", async () => {
-    registerWildshapeHooks(() => ({ id: "nimble" } as unknown as never));
-    callbacks.createChatMessage({
-      speaker: { actor: "a1" },
-      system: { activation: {}, spellName: "   " },
-      flavor: "Druid: Wildshape via Flavor",
-    });
+  it("ignores chat fallback when no adapter is active", async () => {
+    registerWildshapeHooks(() => null);
+    callbacks.createChatMessage({ kind: "message" });
     await Promise.resolve();
 
-    expect(handleWildshapeItemUseMock).toHaveBeenCalledWith(
-      { name: "Wildshape via Flavor", actor: actorsById["a1"] },
-      { id: "nimble" }
+    expect(handleWildshapeItemUseMock).not.toHaveBeenCalled();
+    expect(debugAlertMock).toHaveBeenCalledWith("chat fallback ignored (no active adapter)");
+  });
+
+  it("ignores chat fallback when adapter does not provide parser", async () => {
+    registerWildshapeHooks(() => createAdapter({ parser: undefined }));
+    callbacks.createChatMessage({ kind: "message" });
+    await Promise.resolve();
+
+    expect(handleWildshapeItemUseMock).not.toHaveBeenCalled();
+    expect(debugAlertMock).toHaveBeenCalledWith(
+      "chat fallback ignored (adapter cannot parse chat: test-adapter)"
     );
   });
 
-  it("handles actor lookup fallbacks for missing and contents-only actor collections", async () => {
-    registerWildshapeHooks(() => ({ id: "nimble" } as unknown as never));
+  it("ignores chat fallback when parser returns null", async () => {
+    registerWildshapeHooks(() => createAdapter({ parser: () => null }));
+    callbacks.createChatMessage({ kind: "message" });
+    await Promise.resolve();
 
-    (globalThis as Record<string, unknown>).game = {};
-    callbacks.createChatMessage({
-      speaker: { actor: "a1" },
-      system: { activation: {}, spellName: "Wildshape" },
-      flavor: "Druid: Wildshape",
+    expect(handleWildshapeItemUseMock).not.toHaveBeenCalled();
+    expect(debugAlertMock).toHaveBeenCalledWith("chat fallback ignored (no item extracted)");
+  });
+
+  it("ignores chat fallback when global config disables it", async () => {
+    const parserMock = vi.fn().mockReturnValue({ name: "Wildshape", actor: { id: "a1" } });
+    getGlobalConfigMock.mockReturnValue({
+      version: 1,
+      mappings: [],
+      permissions: { playerOverrideEditors: [] },
+      ui: { showDebugLogs: false, useChatFallback: false },
     });
+    registerWildshapeHooks(() => createAdapter({ parser: parserMock }));
+    callbacks.createChatMessage({ kind: "message" });
+    await Promise.resolve();
 
-    (globalThis as Record<string, unknown>).game = {
-      actors: {
-        contents: [{ id: "a1", name: "Druid" }],
+    expect(parserMock).not.toHaveBeenCalled();
+    expect(handleWildshapeItemUseMock).not.toHaveBeenCalled();
+  });
+
+  it("defaults chat fallback to enabled when config omits useChatFallback", async () => {
+    const parserMock = vi.fn().mockReturnValue({ name: "Wildshape", actor: { id: "a1" } });
+    getGlobalConfigMock.mockReturnValue({
+      version: 1,
+      mappings: [],
+      permissions: { playerOverrideEditors: [] },
+      ui: { showDebugLogs: false },
+    });
+    registerWildshapeHooks(() => createAdapter({ parser: parserMock }));
+    callbacks.createChatMessage({ kind: "message" });
+    await Promise.resolve();
+
+    expect(parserMock).toHaveBeenCalledWith({ kind: "message" });
+    expect(handleWildshapeItemUseMock).toHaveBeenCalledWith(
+      { name: "Wildshape", actor: { id: "a1" } },
+      expect.anything()
+    );
+  });
+
+  it("defaults chat fallback to enabled when global config read throws", async () => {
+    const parserMock = vi.fn().mockReturnValue({ name: "Wildshape", actor: { id: "a1" } });
+    getGlobalConfigMock.mockImplementation(() => {
+      throw new Error("settings unavailable");
+    });
+    registerWildshapeHooks(() => createAdapter({ parser: parserMock }));
+    callbacks.createChatMessage({ kind: "message" });
+    await Promise.resolve();
+
+    expect(parserMock).toHaveBeenCalledWith({ kind: "message" });
+    expect(handleWildshapeItemUseMock).toHaveBeenCalled();
+  });
+
+  it("skips chat fallback when adapter direct item-use listener is active", async () => {
+    const parserMock = vi.fn().mockReturnValue({ name: "Wildshape", actor: { id: "a1" } });
+    registerWildshapeHooks(() =>
+      createAdapter({
+        parser: parserMock,
+        registerDirect: () => true,
+      })
+    );
+
+    callbacks.createChatMessage({ kind: "message" });
+    await Promise.resolve();
+
+    expect(parserMock).not.toHaveBeenCalled();
+    expect(handleWildshapeItemUseMock).not.toHaveBeenCalled();
+  });
+
+  it("routes direct adapter item-use listener into trigger handler", async () => {
+    let directListener: ((item: Item) => void) | null = null;
+    const adapter = createAdapter({
+      registerDirect: (onItemUse) => {
+        directListener = onItemUse;
+        return true;
       },
-    };
-    callbacks.createChatMessage({
-      speaker: { actor: "a1" },
-      system: { activation: {}, spellName: "Wildshape" },
-      flavor: "Druid: Wildshape",
     });
 
-    (globalThis as Record<string, unknown>).game = {
-      actors: {},
-    };
-    callbacks.createChatMessage({
-      speaker: { actor: "a1" },
-      system: { activation: {}, spellName: "Wildshape" },
-      flavor: "Druid: Wildshape",
-    });
+    registerWildshapeHooks(() => adapter);
+    directListener?.({ name: "Wildshape", actor: { id: "a1" } } as Item);
+    await Promise.resolve();
     await Promise.resolve();
 
-    expect(handleWildshapeItemUseMock).toHaveBeenCalledTimes(1);
     expect(handleWildshapeItemUseMock).toHaveBeenCalledWith(
-      { name: "Wildshape", actor: { id: "a1", name: "Druid" } },
-      { id: "nimble" }
+      { name: "Wildshape", actor: { id: "a1" } },
+      adapter
     );
   });
 
-  it("logs structured errors if trigger handling throws", async () => {
-    handleWildshapeItemUseMock.mockRejectedValueOnce(new Error("boom"));
-    registerWildshapeHooks(() => ({ id: "nimble" } as unknown as never));
+  it("logs direct-listener trigger errors without breaking activation flow", async () => {
+    let directListener: ((item: Item) => void) | null = null;
+    handleWildshapeItemUseMock.mockRejectedValueOnce(new Error("direct boom"));
+    registerWildshapeHooks(() =>
+      createAdapter({
+        registerDirect: (onItemUse) => {
+          directListener = onItemUse;
+          return true;
+        },
+      })
+    );
 
-    callbacks["nimble.useItem"]({ name: "Wildshape" });
+    directListener?.({ name: "Wildshape", actor: { id: "a1" } } as Item);
     await Promise.resolve();
     await Promise.resolve();
 
     expect(logErrorMock).toHaveBeenCalledWith("wildshape.trigger.failed", {
-      hookName: "nimble.useItem",
-      error: "boom",
-    });
-    expect(debugAlertMock).toHaveBeenCalledWith("hook error in nimble.useItem: boom");
-  });
-
-  it("logs non-Error rejection values for item-use hooks", async () => {
-    handleWildshapeItemUseMock.mockRejectedValueOnce("plain item failure");
-    registerWildshapeHooks(() => ({ id: "nimble" } as unknown as never));
-
-    callbacks["nimble.useItem"]({ name: "Wildshape", actor: { id: "a1" } });
-    await Promise.resolve();
-    await Promise.resolve();
-
-    expect(logErrorMock).toHaveBeenCalledWith("wildshape.trigger.failed", {
-      hookName: "nimble.useItem",
-      error: "plain item failure",
+      hookName: "adapter.directItemUse",
+      error: "direct boom",
     });
     expect(debugAlertMock).toHaveBeenCalledWith(
-      "hook error in nimble.useItem: plain item failure"
+      "hook error in adapter.directItemUse: direct boom"
     );
   });
 
-  it("logs non-Error rejection values as strings", async () => {
-    handleWildshapeItemUseMock.mockRejectedValueOnce("plain failure");
-    registerWildshapeHooks(() => ({ id: "nimble" } as unknown as never));
+  it("logs direct-listener trigger errors for non-Error values", async () => {
+    let directListener: ((item: Item) => void) | null = null;
+    handleWildshapeItemUseMock.mockRejectedValueOnce("direct plain failure");
+    registerWildshapeHooks(() =>
+      createAdapter({
+        registerDirect: (onItemUse) => {
+          directListener = onItemUse;
+          return true;
+        },
+      })
+    );
 
-    callbacks.createChatMessage({
-      speaker: { actor: "a1" },
-      system: { activation: {}, spellName: "Wildshape" },
-      flavor: "Druid: Wildshape",
+    directListener?.({ name: "Wildshape", actor: { id: "a1" } } as Item);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(logErrorMock).toHaveBeenCalledWith("wildshape.trigger.failed", {
+      hookName: "adapter.directItemUse",
+      error: "direct plain failure",
     });
+    expect(debugAlertMock).toHaveBeenCalledWith(
+      "hook error in adapter.directItemUse: direct plain failure"
+    );
+  });
+
+  it("logs structured errors if trigger handling throws from item-use hook", async () => {
+    handleWildshapeItemUseMock.mockRejectedValueOnce(new Error("boom"));
+    registerWildshapeHooks(() => createAdapter());
+
+    callbacks["useItem"]({ name: "Wildshape" });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(logErrorMock).toHaveBeenCalledWith("wildshape.trigger.failed", {
+      hookName: "useItem",
+      error: "boom",
+    });
+    expect(debugAlertMock).toHaveBeenCalledWith("hook error in useItem: boom");
+  });
+
+  it("logs non-Error item-use failures from trigger handling", async () => {
+    handleWildshapeItemUseMock.mockRejectedValueOnce("useItem plain failure");
+    registerWildshapeHooks(() => createAdapter());
+
+    callbacks["useItem"]({ name: "Wildshape" });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(logErrorMock).toHaveBeenCalledWith("wildshape.trigger.failed", {
+      hookName: "useItem",
+      error: "useItem plain failure",
+    });
+    expect(debugAlertMock).toHaveBeenCalledWith("hook error in useItem: useItem plain failure");
+  });
+
+  it("logs parser errors for chat fallback hook failures", async () => {
+    registerWildshapeHooks(() =>
+      createAdapter({
+        parser: () => {
+          throw new Error("chat parse boom");
+        },
+      })
+    );
+
+    callbacks.createChatMessage({ kind: "message" });
+    await Promise.resolve();
+
+    expect(logErrorMock).toHaveBeenCalledWith("wildshape.trigger.failed", {
+      hookName: "createChatMessage",
+      error: "chat parse boom",
+    });
+    expect(debugAlertMock).toHaveBeenCalledWith("hook error in createChatMessage: chat parse boom");
+  });
+
+  it("logs parser errors for non-Error thrown values", async () => {
+    registerWildshapeHooks(() =>
+      createAdapter({
+        parser: () => {
+          throw "chat parse plain failure";
+        },
+      })
+    );
+
+    callbacks.createChatMessage({ kind: "message" });
+    await Promise.resolve();
+
+    expect(logErrorMock).toHaveBeenCalledWith("wildshape.trigger.failed", {
+      hookName: "createChatMessage",
+      error: "chat parse plain failure",
+    });
+    expect(debugAlertMock).toHaveBeenCalledWith(
+      "hook error in createChatMessage: chat parse plain failure"
+    );
+  });
+
+  it("logs chat fallback errors when trigger handling rejects", async () => {
+    handleWildshapeItemUseMock.mockRejectedValueOnce("plain failure");
+    registerWildshapeHooks(() =>
+      createAdapter({
+        parser: () => ({ name: "Wildshape", actor: { id: "a1" } } as Item),
+      })
+    );
+
+    callbacks.createChatMessage({ kind: "message" });
     await Promise.resolve();
     await Promise.resolve();
 
@@ -319,27 +477,6 @@ describe("hooks", () => {
       hookName: "createChatMessage",
       error: "plain failure",
     });
-    expect(debugAlertMock).toHaveBeenCalledWith(
-      "hook error in createChatMessage: plain failure"
-    );
-  });
-
-  it("logs Error objects for chat fallback hook failures", async () => {
-    handleWildshapeItemUseMock.mockRejectedValueOnce(new Error("chat boom"));
-    registerWildshapeHooks(() => ({ id: "nimble" } as unknown as never));
-
-    callbacks.createChatMessage({
-      speaker: { actor: "a1" },
-      system: { activation: {}, spellName: "Wildshape" },
-      flavor: "Druid: Wildshape",
-    });
-    await Promise.resolve();
-    await Promise.resolve();
-
-    expect(logErrorMock).toHaveBeenCalledWith("wildshape.trigger.failed", {
-      hookName: "createChatMessage",
-      error: "chat boom",
-    });
-    expect(debugAlertMock).toHaveBeenCalledWith("hook error in createChatMessage: chat boom");
+    expect(debugAlertMock).toHaveBeenCalledWith("hook error in createChatMessage: plain failure");
   });
 });

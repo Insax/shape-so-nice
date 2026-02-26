@@ -17,6 +17,7 @@ describe("NimbleAdapter", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     delete (globalThis as { fromUuid?: unknown }).fromUuid;
+    delete (globalThis as { CONFIG?: unknown }).CONFIG;
     (globalThis as Record<string, unknown>).foundry = {
       utils: { deepClone: clone },
     };
@@ -40,6 +41,175 @@ describe("NimbleAdapter", () => {
       system: { id: "dnd5e" },
     };
     expect(adapter.detect()).toBe(false);
+  });
+
+  it("exposes Nimble item-use hook names for core registration", () => {
+    const adapter = new NimbleAdapter();
+    expect(adapter.getItemUseHooks()).toEqual(["useItem", "itemUse", "itemUsageComplete"]);
+  });
+
+  it("extracts item from supported hook argument shapes", () => {
+    const adapter = new NimbleAdapter();
+    expect(
+      adapter.extractItemFromHookArgs("useItem", [
+        {
+          item: { name: "Wildshape", actor: { id: "a1" } },
+        },
+      ])
+    ).toEqual({ name: "Wildshape", actor: { id: "a1" } });
+
+    expect(
+      adapter.extractItemFromHookArgs("itemUse", [{ name: "Wildshape 2", actor: { id: "a2" } }])
+    ).toEqual({ name: "Wildshape 2", actor: { id: "a2" } });
+
+    expect(adapter.extractItemFromHookArgs("useItem", [{ name: "Actor", items: [] }])).toBeNull();
+  });
+
+  it("registers a direct item-use listener by wrapping Nimble item activate methods", async () => {
+    const onItemUse = vi.fn();
+
+    class TestBaseItem {
+      public async activate(): Promise<{ id: string }> {
+        return { id: "chat-card" };
+      }
+    }
+
+    class TestSpellItem extends TestBaseItem {
+      public override async activate(): Promise<{ id: string }> {
+        return super.activate();
+      }
+    }
+
+    (globalThis as Record<string, unknown>).CONFIG = {
+      Item: {
+        documentClasses: {
+          base: TestBaseItem,
+          spell: TestSpellItem,
+        },
+      },
+    };
+
+    const adapter = new NimbleAdapter();
+    expect(adapter.registerDirectItemUseListener(onItemUse)).toBe(true);
+
+    const item = new TestSpellItem() as unknown as Item;
+    await (item as unknown as { activate: () => Promise<unknown> }).activate();
+
+    expect(onItemUse).toHaveBeenCalledTimes(1);
+    expect(onItemUse).toHaveBeenCalledWith(item);
+  });
+
+  it("does not emit direct item-use callback when item activation resolves null", async () => {
+    const onItemUse = vi.fn();
+
+    class TestFeatureItem {
+      public async activate(): Promise<null> {
+        return null;
+      }
+    }
+
+    (globalThis as Record<string, unknown>).CONFIG = {
+      Item: {
+        documentClasses: {
+          feature: TestFeatureItem,
+        },
+      },
+    };
+
+    const adapter = new NimbleAdapter();
+    expect(adapter.registerDirectItemUseListener(onItemUse)).toBe(true);
+
+    const item = new TestFeatureItem() as unknown as Item;
+    await (item as unknown as { activate: () => Promise<unknown> }).activate();
+
+    expect(onItemUse).not.toHaveBeenCalled();
+  });
+
+  it("returns false when no Nimble item document classes are available for direct listener wrapping", () => {
+    const adapter = new NimbleAdapter();
+    expect(adapter.registerDirectItemUseListener(vi.fn())).toBe(false);
+  });
+
+  it("extracts item payload from Nimble chat message data", () => {
+    const actor = { id: "a1", name: "Druid" } as Actor;
+    (globalThis as Record<string, unknown>).game = {
+      actors: {
+        get: vi.fn((id: string) => (id === "a1" ? actor : null)),
+      },
+    };
+
+    const adapter = new NimbleAdapter();
+    expect(
+      adapter.extractItemFromChatMessage({
+        speaker: { actor: "a1" },
+        system: { activation: {}, spellName: "Wildshape" },
+        flavor: "Druid: Wildshape",
+      })
+    ).toEqual({
+      name: "Wildshape",
+      actor,
+    });
+
+    expect(
+      adapter.extractItemFromChatMessage({
+        speaker: { actor: "a1" },
+        system: { activation: {} },
+        flavor: "Someone Else: Beast Shape",
+      })
+    ).toEqual({
+      name: "Beast Shape",
+      actor,
+    });
+  });
+
+  it("returns null for invalid Nimble chat messages and supports actors.contents fallback", () => {
+    (globalThis as Record<string, unknown>).game = {
+      actors: {
+        contents: [{ id: "a1", name: "Druid" }],
+      },
+    };
+
+    const adapter = new NimbleAdapter();
+    expect(
+      adapter.extractItemFromChatMessage({
+        speaker: { actor: "a1" },
+        system: { activation: {}, spellName: "Wildshape" },
+        flavor: "Druid: Wildshape",
+      })
+    ).toEqual({
+      name: "Wildshape",
+      actor: { id: "a1", name: "Druid" },
+    });
+
+    expect(adapter.extractItemFromChatMessage("not-a-record")).toBeNull();
+    expect(
+      adapter.extractItemFromChatMessage({
+        speaker: { actor: "missing" },
+        system: { activation: {}, spellName: "Wildshape" },
+        flavor: "Druid: Wildshape",
+      })
+    ).toBeNull();
+    expect(
+      adapter.extractItemFromChatMessage({
+        speaker: { actor: "a1" },
+        system: {},
+        flavor: "Druid: Wildshape",
+      })
+    ).toBeNull();
+    expect(
+      adapter.extractItemFromChatMessage({
+        speaker: {},
+        system: { activation: {}, spellName: "Wildshape" },
+        flavor: "Druid: Wildshape",
+      })
+    ).toBeNull();
+    expect(
+      adapter.extractItemFromChatMessage({
+        speaker: { actor: "a1" },
+        system: { activation: {} },
+        flavor: "NoSeparatorFlavor",
+      })
+    ).toBeNull();
   });
 
   it("captures snapshot from modern actor shape", async () => {
@@ -1790,8 +1960,130 @@ describe("NimbleAdapter", () => {
     expect(actor.createEmbeddedDocuments).not.toHaveBeenCalled();
   });
 
-  it("keeps ensureWildshapeAction as no-op scaffold", async () => {
-    await expect(new NimbleAdapter().ensureWildshapeAction({} as Actor)).resolves.toBeUndefined();
+  it("ensures configured wildshape trigger actions exist on actor", async () => {
+    getEffectiveConfigMock.mockReturnValue({
+      version: 1,
+      mappings: [
+        {
+          id: "map_1",
+          trigger: { mode: "itemName", value: "Wildshape" },
+          formRefs: [],
+          filters: { whitelist: [], blacklist: [] },
+        },
+        {
+          id: "map_2",
+          trigger: { mode: "itemName", value: " Storm Shift " },
+          formRefs: [],
+          filters: { whitelist: [], blacklist: [] },
+        },
+        {
+          id: "map_3",
+          trigger: { mode: "itemName", value: "wildshape" },
+          formRefs: [],
+          filters: { whitelist: [], blacklist: [] },
+        },
+      ],
+      permissions: { playerOverrideEditors: [] },
+      ui: { showDebugLogs: false },
+    });
+    const actor = {
+      toObject: () => ({
+        items: [],
+      }),
+      items: {
+        contents: [{ id: "i1", name: "Wildshape", type: "feature" }],
+      },
+      createEmbeddedDocuments: vi.fn().mockResolvedValue(undefined),
+    } as unknown as Actor;
+
+    await new NimbleAdapter().ensureWildshapeAction(actor);
+
+    expect(actor.createEmbeddedDocuments).toHaveBeenCalledWith("Item", [
+      {
+        name: "Storm Shift",
+        type: "feature",
+        system: {
+          featureType: "class",
+        },
+        flags: {
+          "shape-so-nice": {
+            injected: true,
+            ensuredAction: true,
+          },
+        },
+      },
+    ]);
+  });
+
+  it("skips ensureWildshapeAction when all configured triggers already exist", async () => {
+    getEffectiveConfigMock.mockReturnValue({
+      version: 1,
+      mappings: [
+        {
+          id: "map_1",
+          trigger: { mode: "itemName", value: "Wildshape" },
+          formRefs: [],
+          filters: { whitelist: [], blacklist: [] },
+        },
+      ],
+      permissions: { playerOverrideEditors: [] },
+      ui: { showDebugLogs: false },
+    });
+    const actor = {
+      toObject: () => ({
+        items: [],
+      }),
+      items: {
+        contents: [{ id: "i1", name: "wildshape", type: "feature" }],
+      },
+      createEmbeddedDocuments: vi.fn(),
+    } as unknown as Actor;
+
+    await new NimbleAdapter().ensureWildshapeAction(actor);
+
+    expect(actor.createEmbeddedDocuments).not.toHaveBeenCalled();
+  });
+
+  it("skips ensureWildshapeAction when actor cannot create embedded items", async () => {
+    getEffectiveConfigMock.mockReturnValue({
+      version: 1,
+      mappings: [
+        {
+          id: "map_1",
+          trigger: { mode: "itemName", value: "Wildshape" },
+          formRefs: [],
+          filters: { whitelist: [], blacklist: [] },
+        },
+      ],
+      permissions: { playerOverrideEditors: [] },
+      ui: { showDebugLogs: false },
+    });
+
+    await expect(
+      new NimbleAdapter().ensureWildshapeAction({
+        toObject: () => ({ items: [] }),
+        items: { contents: [] },
+      } as unknown as Actor)
+    ).resolves.toBeUndefined();
+  });
+
+  it("skips ensureWildshapeAction when no trigger mappings are configured", async () => {
+    getEffectiveConfigMock.mockReturnValue({
+      version: 1,
+      mappings: [],
+      permissions: { playerOverrideEditors: [] },
+      ui: { showDebugLogs: false },
+    });
+    const createEmbeddedDocuments = vi.fn();
+    const actor = {
+      toObject: () => ({ items: [] }),
+      items: { contents: [] },
+      createEmbeddedDocuments,
+    } as unknown as Actor;
+
+    await new NimbleAdapter().ensureWildshapeAction(actor);
+
+    expect(createEmbeddedDocuments).not.toHaveBeenCalled();
   });
 
   it("matches trigger item names from effective config", () => {

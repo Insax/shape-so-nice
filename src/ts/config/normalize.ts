@@ -1,4 +1,4 @@
-import { DEFAULT_WILDSHAPE_FILTERS } from "./defaults";
+import { DEFAULT_GLOBAL_CONFIG, DEFAULT_WILDSHAPE_FILTERS } from "./defaults";
 import type {
   AbilityFilters,
   FormRef,
@@ -88,6 +88,10 @@ export function normalizeGlobalConfig(config: GlobalConfig): GlobalConfig {
     },
     ui: {
       showDebugLogs: config.ui.showDebugLogs,
+      useChatFallback:
+        typeof config.ui.useChatFallback === "boolean"
+          ? config.ui.useChatFallback
+          : (DEFAULT_GLOBAL_CONFIG.ui.useChatFallback ?? true),
     },
   };
 }

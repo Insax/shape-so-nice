@@ -17,7 +17,11 @@ export interface TransformPlan {
 export interface WildshapeAdapter {
   id: string;
   detect(): boolean;
+  getItemUseHooks?(): readonly string[];
   isWildshapeTrigger(item: Item): boolean;
+  extractItemFromHookArgs?(hookName: string, args: unknown[]): Item | null;
+  registerDirectItemUseListener?(onItemUse: (item: Item) => void): boolean;
+  extractItemFromChatMessage?(message: unknown): Item | null;
   getActorSnapshot(actor: Actor): Promise<ActorSnapshot>;
   buildTransformPlan(input: {
     baseActor: Actor;

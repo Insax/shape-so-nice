@@ -1,4 +1,6 @@
-import { MODULE_ID, SETTINGS_KEYS } from "../constants";
+import { MODULE_ID, SCHEMA_VERSION, SETTINGS_KEYS } from "../constants";
+import { logInfo, logWarning } from "../core/logger";
+import { migrateGlobalConfigToCurrentSchema } from "./migrations";
 import { DEFAULT_GLOBAL_CONFIG } from "./defaults";
 import { normalizeGlobalConfig } from "./normalize";
 import type { GlobalConfig } from "./types";
@@ -21,18 +23,50 @@ export function registerGlobalSettings(): void {
         return;
       }
 
-      console.warn(`[${MODULE_ID}] Invalid global config detected after update.`, rawConfig);
+      logWarning("wildshape.settings.invalidGlobalConfig.onChange", {
+        payload: rawConfig,
+      });
     },
   });
 }
 
 export function getGlobalConfig(): GlobalConfig {
   const rawConfig = (game as Game).settings.get(MODULE_ID, SETTINGS_KEYS.GLOBAL_CONFIG);
-  if (isGlobalConfig(rawConfig)) {
-    return normalizeGlobalConfig(rawConfig);
+  const migration = migrateGlobalConfigToCurrentSchema(rawConfig);
+  if (migration.config) {
+    if (migration.migrated) {
+      const canPersistMigration = (game as Game).user?.isGM === true;
+      if (canPersistMigration) {
+        void (game as Game).settings
+          .set(
+            MODULE_ID,
+            SETTINGS_KEYS.GLOBAL_CONFIG,
+            normalizeGlobalConfig(migration.config)
+          )
+          .catch((error: unknown) => {
+            logWarning("wildshape.settings.migration.persistFailed", {
+              scope: "globalConfig",
+              fromVersion: migration.fromVersion,
+              toVersion: SCHEMA_VERSION,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          });
+      }
+
+      logInfo("wildshape.settings.migration.applied", {
+        scope: "globalConfig",
+        fromVersion: migration.fromVersion,
+        toVersion: SCHEMA_VERSION,
+        persisted: canPersistMigration,
+      });
+    }
+
+    return normalizeGlobalConfig(migration.config);
   }
 
-  console.warn(`[${MODULE_ID}] Falling back to default global config due to invalid setting.`, rawConfig);
+  logWarning("wildshape.settings.invalidGlobalConfig.read", {
+    payload: rawConfig,
+  });
   return cloneDefaultGlobalConfig();
 }
 

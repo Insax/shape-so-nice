@@ -6,10 +6,10 @@ export const DEFAULT_WILDSHAPE_FILTERS: AbilityFilters = {
     "type:class",
     "type:background",
     "type:ancestry",
-    "type:armor",
-    "type:miscellaneous",
+    "objectType:armor",
+    "objectType:misc",
   ],
-  blacklist: ["type:weapon"],
+  blacklist: ["objectType:weapon"],
 };
 
 export const DEFAULT_GLOBAL_CONFIG: GlobalConfig = {
@@ -20,6 +20,7 @@ export const DEFAULT_GLOBAL_CONFIG: GlobalConfig = {
   },
   ui: {
     showDebugLogs: false,
+    useChatFallback: true,
   },
 };
 

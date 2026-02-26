@@ -37,6 +37,7 @@ function createUser(id: string | null, isGM: boolean): TestUser {
 describe("player override service", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
     getGlobalConfigMock.mockReset();
     getGlobalConfigMock.mockReturnValue({
       version: SCHEMA_VERSION,
@@ -111,6 +112,98 @@ describe("player override service", () => {
         },
       ],
     });
+  });
+
+  it("migrates legacy player override payload and persists when allowed", async () => {
+    const currentUser = (globalThis as Record<string, unknown>).game as { user: TestUser };
+    currentUser.user.getFlag.mockReturnValue({
+      mappings: [
+        {
+          id: "map_legacy",
+          formRefsAdd: [{ mode: "name", value: " Wolf Form " }],
+          formRefsRemove: [],
+        },
+      ],
+    });
+    currentUser.user.setFlag.mockResolvedValue(undefined);
+
+    const result = getPlayerOverrideConfig();
+
+    expect(result).toEqual({
+      version: SCHEMA_VERSION,
+      mappings: [
+        {
+          id: "map_legacy",
+          formRefsAdd: [{ mode: "name", value: "Wolf Form" }],
+          formRefsRemove: [],
+        },
+      ],
+    });
+    expect(currentUser.user.setFlag).toHaveBeenCalledWith(MODULE_ID, "playerOverride", {
+      version: SCHEMA_VERSION,
+      mappings: [
+        {
+          id: "map_legacy",
+          formRefsAdd: [{ mode: "name", value: "Wolf Form" }],
+          formRefsRemove: [],
+        },
+      ],
+    });
+  });
+
+  it("migrates legacy player override payload without persisting when user cannot edit", () => {
+    const currentUser = createUser("player-2", false);
+    currentUser.getFlag.mockReturnValue({
+      mappings: [
+        {
+          id: "map_legacy",
+          formRefsAdd: [{ mode: "name", value: "Wolf Form" }],
+          formRefsRemove: [],
+        },
+      ],
+    });
+    (globalThis as Record<string, unknown>).game = { user: currentUser };
+    getGlobalConfigMock.mockReturnValue({
+      version: SCHEMA_VERSION,
+      mappings: [],
+      permissions: { playerOverrideEditors: [] },
+      ui: { showDebugLogs: false },
+    });
+
+    const result = getPlayerOverrideConfig();
+
+    expect(result).toEqual({
+      version: SCHEMA_VERSION,
+      mappings: [
+        {
+          id: "map_legacy",
+          formRefsAdd: [{ mode: "name", value: "Wolf Form" }],
+          formRefsRemove: [],
+        },
+      ],
+    });
+    expect(currentUser.setFlag).not.toHaveBeenCalled();
+  });
+
+  it("logs a warning when migrated player override persistence fails", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const currentUser = (globalThis as Record<string, unknown>).game as { user: TestUser };
+    currentUser.user.getFlag.mockReturnValue({
+      mappings: [
+        {
+          id: "map_legacy",
+          formRefsAdd: [{ mode: "name", value: "Wolf Form" }],
+          formRefsRemove: [],
+        },
+      ],
+    });
+    currentUser.user.setFlag.mockRejectedValue(new Error("persist failed"));
+
+    getPlayerOverrideConfig();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(warnSpy).toHaveBeenCalled();
   });
 
   it("falls back to legacy raw flag scope when module scope flag is missing", () => {

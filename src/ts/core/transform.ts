@@ -4,12 +4,9 @@ import type { AbilityFilters } from "../config/types";
 import { FLAG_KEYS, MODULE_HOOKS, MODULE_ID, SCHEMA_VERSION } from "../constants";
 import { logDebug, logError, logInfo, logWarning } from "./logger";
 import { getModuleWildshapeActorState, type WildshapeActorState } from "./state";
+import { isRecord } from "../utils/typeGuards";
 
 const inFlightActorOperations = new Set<string>();
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
 
 function isActorSnapshot(value: unknown): value is ActorSnapshot {
   if (!isRecord(value)) {

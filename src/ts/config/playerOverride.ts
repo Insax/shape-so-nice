@@ -1,5 +1,8 @@
-import { FLAG_KEYS, LEGACY_FLAG_SCOPE, MODULE_ID } from "../constants";
+import { FLAG_KEYS, LEGACY_FLAG_SCOPE, MODULE_ID, SCHEMA_VERSION } from "../constants";
+import { logInfo, logWarning } from "../core/logger";
+import { isRecord } from "../utils/typeGuards";
 import { DEFAULT_PLAYER_OVERRIDE_CONFIG } from "./defaults";
+import { migratePlayerOverrideConfigToCurrentSchema } from "./migrations";
 import { normalizePlayerOverrideConfig } from "./normalize";
 import { getGlobalConfig } from "./settings";
 import type { PlayerOverrideConfig } from "./types";
@@ -7,10 +10,6 @@ import { isPlayerOverrideConfig } from "./validation";
 
 function cloneDefaultPlayerOverrideConfig(): PlayerOverrideConfig {
   return foundry.utils.deepClone(DEFAULT_PLAYER_OVERRIDE_CONFIG);
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
 }
 
 function getCurrentUser(): User | null {
@@ -62,7 +61,7 @@ export function canCurrentUserEditPlayerOverride(targetUser: User): boolean {
 export function getPlayerOverrideConfig(targetUser?: User): PlayerOverrideConfig {
   const user = resolveTargetUser(targetUser);
   if (!user) {
-    console.warn(`[${MODULE_ID}] No user available to read player override config.`);
+    logWarning("wildshape.playerOverride.missingUser");
     return cloneDefaultPlayerOverrideConfig();
   }
 
@@ -73,15 +72,43 @@ export function getPlayerOverrideConfig(targetUser?: User): PlayerOverrideConfig
     return cloneDefaultPlayerOverrideConfig();
   }
 
-  if (!isPlayerOverrideConfig(rawConfig)) {
-    console.warn(`[${MODULE_ID}] Invalid player override config detected for user.`, {
+  const migration = migratePlayerOverrideConfigToCurrentSchema(rawConfig);
+  if (!migration.config) {
+    logWarning("wildshape.playerOverride.invalidPayload", {
       userId: user.id,
       payload: rawConfig,
     });
     return cloneDefaultPlayerOverrideConfig();
   }
 
-  return normalizePlayerOverrideConfig(rawConfig);
+  if (migration.migrated) {
+    const canPersistMigration = canCurrentUserEditPlayerOverride(user);
+    if (canPersistMigration) {
+      void user
+        .setFlag(
+          MODULE_ID,
+          FLAG_KEYS.PLAYER_OVERRIDE,
+          normalizePlayerOverrideConfig(migration.config)
+        )
+        .catch((error: unknown) => {
+          logWarning("wildshape.playerOverride.migration.persistFailed", {
+            userId: user.id ?? null,
+            fromVersion: migration.fromVersion,
+            toVersion: SCHEMA_VERSION,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        });
+    }
+
+    logInfo("wildshape.playerOverride.migration.applied", {
+      userId: user.id ?? null,
+      fromVersion: migration.fromVersion,
+      toVersion: SCHEMA_VERSION,
+      persisted: canPersistMigration,
+    });
+  }
+
+  return normalizePlayerOverrideConfig(migration.config);
 }
 
 export async function setPlayerOverrideConfig(
