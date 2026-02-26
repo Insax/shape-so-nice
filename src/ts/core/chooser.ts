@@ -75,7 +75,11 @@ export async function openWildshapeChooser(input: {
   debugAlert(`chooser opening with ${choices.length} options for "${itemName}"`);
   const dialog = new dialogCtor({
     title: "Wildshape",
-    content: `<p>Select a wildshape form.</p>`,
+    content: `
+      <div class="wildshape-chooser-content">
+        <p>Select a wildshape form.</p>
+      </div>
+    `,
     buttons: buildButtons(choices, (choice) => {
       if (choice.kind === "original") {
         void revertWildshapeForm({
@@ -94,6 +98,8 @@ export async function openWildshapeChooser(input: {
       });
     }),
     default: "choice_0",
+  }, {
+    classes: ["shape-so-nice", "wildshape-chooser"],
   });
   dialog.render(true);
   return true;

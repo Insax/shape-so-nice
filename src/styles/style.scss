@@ -1,5 +1,107 @@
+.shape-so-nice {
+  --ws-text: var(--color-text-dark-primary, #1a1a1a);
+  --ws-muted: var(--color-text-dark-secondary, #6a6f78);
+  --ws-panel-bg: rgba(252, 252, 252, 0.86);
+  --ws-surface-bg: rgba(255, 255, 255, 0.6);
+  --ws-surface-alt-bg: rgba(255, 255, 255, 0.78);
+  --ws-border: rgba(0, 0, 0, 0.16);
+  --ws-border-strong: rgba(0, 0, 0, 0.26);
+  --ws-input-bg: rgba(255, 255, 255, 0.92);
+  --ws-input-border: rgba(0, 0, 0, 0.2);
+  --ws-button-bg: rgba(0, 0, 0, 0.07);
+  --ws-button-bg-hover: rgba(0, 0, 0, 0.14);
+  --ws-button-border: rgba(0, 0, 0, 0.28);
+  --ws-focus: #3b82f6;
+  --ws-shadow: rgba(0, 0, 0, 0.08);
+}
+
+.theme-dark .shape-so-nice,
+[data-theme="dark"] .shape-so-nice,
+[data-color-scheme="dark"] .shape-so-nice,
+.shape-so-nice.theme-dark {
+  --ws-text: var(--color-text-light-primary, #e9edf6);
+  --ws-muted: var(--color-text-light-secondary, #bac2d0);
+  --ws-panel-bg: rgba(20, 24, 31, 0.9);
+  --ws-surface-bg: rgba(32, 38, 47, 0.74);
+  --ws-surface-alt-bg: rgba(40, 46, 57, 0.86);
+  --ws-border: rgba(255, 255, 255, 0.16);
+  --ws-border-strong: rgba(255, 255, 255, 0.28);
+  --ws-input-bg: rgba(11, 14, 20, 0.84);
+  --ws-input-border: rgba(255, 255, 255, 0.24);
+  --ws-button-bg: rgba(255, 255, 255, 0.08);
+  --ws-button-bg-hover: rgba(255, 255, 255, 0.17);
+  --ws-button-border: rgba(255, 255, 255, 0.34);
+  --ws-focus: #79a9ff;
+  --ws-shadow: rgba(0, 0, 0, 0.5);
+}
+
+.shape-so-nice.wildshape-global-config .window-content,
+.shape-so-nice.wildshape-player-override .window-content {
+  background: var(--ws-panel-bg);
+  color: var(--ws-text);
+}
+
+.shape-so-nice.wildshape-chooser .window-content {
+  background: var(--ws-panel-bg);
+  color: var(--ws-text);
+}
+
+.shape-so-nice.wildshape-chooser .dialog-content {
+  color: var(--ws-text);
+}
+
+.shape-so-nice.wildshape-chooser .wildshape-chooser-content {
+  background: var(--ws-surface-bg);
+  border: 1px solid var(--ws-border);
+  border-radius: 6px;
+  box-shadow: 0 3px 10px var(--ws-shadow);
+  margin: 0 0 10px 0;
+  padding: 10px 12px;
+}
+
+.shape-so-nice.wildshape-chooser .wildshape-chooser-content p {
+  color: var(--ws-text);
+  margin: 0;
+}
+
+.shape-so-nice.wildshape-chooser .dialog-buttons {
+  border-top: 1px solid var(--ws-border);
+  display: grid;
+  gap: 6px;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  padding-top: 10px;
+}
+
+.shape-so-nice.wildshape-chooser .dialog-buttons .dialog-button {
+  align-items: center;
+  background: var(--ws-button-bg);
+  border: 1px solid var(--ws-button-border);
+  color: var(--ws-text);
+  display: flex;
+  justify-content: center;
+  margin: 0;
+  min-height: 34px;
+  padding: 6px 10px;
+  text-align: center;
+  width: 100%;
+}
+
+.shape-so-nice.wildshape-chooser .dialog-buttons .dialog-button:hover,
+.shape-so-nice.wildshape-chooser .dialog-buttons .dialog-button:focus-visible {
+  background: var(--ws-button-bg-hover);
+  border-color: var(--ws-border-strong);
+  outline: 2px solid var(--ws-focus);
+  outline-offset: 1px;
+}
+
 .wildshape-global-config-form,
 .wildshape-player-override-form {
+  color: var(--ws-text);
+
+  .notes {
+    color: var(--ws-muted);
+  }
+
   .form-group {
     align-items: initial;
     display: block;
@@ -7,6 +109,7 @@
   }
 
   .form-group > label {
+    color: var(--ws-text);
     display: block;
     margin: 0 0 4px 0;
     width: auto;
@@ -25,10 +128,18 @@
   }
 
   .ws-config-section {
-    border: 1px solid rgba(0, 0, 0, 0.1);
+    background: var(--ws-surface-bg);
+    border: 1px solid var(--ws-border);
     border-radius: 6px;
+    box-shadow: 0 3px 10px var(--ws-shadow);
     margin-bottom: 12px;
     padding: 12px;
+  }
+
+  .ws-config-section h2,
+  .ws-config-section h3,
+  .ws-config-section h4 {
+    color: var(--ws-text);
   }
 
   .ws-section-header,
@@ -48,7 +159,8 @@
   }
 
   .ws-mapping-card {
-    border: 1px solid rgba(0, 0, 0, 0.08);
+    background: var(--ws-surface-alt-bg);
+    border: 1px solid var(--ws-border);
     border-radius: 6px;
     margin-bottom: 10px;
     padding: 10px;
@@ -90,8 +202,16 @@
 
     input,
     select {
+      background: var(--ws-input-bg);
+      border: 1px solid var(--ws-input-border);
+      color: var(--ws-text);
       margin: 0;
       width: 100%;
+    }
+
+    input::placeholder {
+      color: var(--ws-muted);
+      opacity: 1;
     }
 
     button {
@@ -114,6 +234,7 @@
   }
 
   .ws-ability-name {
+    color: var(--ws-text);
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -128,12 +249,65 @@
     justify-content: center;
 
     &.is-match {
-      color: #15803d;
+      color: #22c55e;
     }
 
     &.is-missing {
-      color: #b91c1c;
+      color: #ef4444;
     }
+  }
+
+  input[type="text"],
+  input[type="number"],
+  select,
+  textarea {
+    background: var(--ws-input-bg);
+    border: 1px solid var(--ws-input-border);
+    color: var(--ws-text);
+  }
+
+  textarea::placeholder,
+  input::placeholder {
+    color: var(--ws-muted);
+    opacity: 1;
+  }
+
+  input[type="checkbox"] {
+    accent-color: var(--ws-focus);
+  }
+
+  button {
+    background: var(--ws-button-bg);
+    border: 1px solid var(--ws-button-border);
+    color: var(--ws-text);
+    transition: background-color 120ms ease, border-color 120ms ease;
+  }
+
+  button:hover:not(:disabled),
+  button:focus-visible:not(:disabled) {
+    background: var(--ws-button-bg-hover);
+    border-color: var(--ws-border-strong);
+  }
+
+  button:disabled,
+  input:disabled,
+  select:disabled,
+  textarea:disabled {
+    opacity: 0.65;
+  }
+
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible,
+  button:focus-visible {
+    outline: 2px solid var(--ws-focus);
+    outline-offset: 1px;
+  }
+
+  .sheet-footer {
+    border-top: 1px solid var(--ws-border);
+    margin-top: 12px;
+    padding-top: 10px;
   }
 
   @media (max-width: 900px) {

@@ -231,6 +231,18 @@ function getActorItems(actor: Actor): AdapterItemRef[] {
   return [...byId.values(), ...withoutId];
 }
 
+function toAdapterItemRefFromRaw(rawItem: Record<string, unknown>): AdapterItemRef {
+  const id = rawItem["id"] ?? rawItem["_id"];
+  const name = rawItem["name"];
+  const type = rawItem["type"];
+  return {
+    id: typeof id === "string" ? id : null,
+    name: typeof name === "string" ? name : null,
+    type: typeof type === "string" ? type : null,
+    raw: cloneValue(rawItem),
+  };
+}
+
 function normalizeFilterName(value: string): string {
   return normalizeString(value).toLowerCase();
 }
@@ -246,7 +258,7 @@ type FilterRule =
       value: string;
     };
 
-type DescriptorKey = "type" | "objecttype" | "featuretype";
+type DescriptorKey = "type" | "objecttype" | "featuretype" | "objectsizetype";
 
 interface DescriptorAlias {
   descriptor: DescriptorKey;
@@ -257,6 +269,7 @@ interface ItemDescriptors {
   type: Set<string>;
   objecttype: Set<string>;
   featuretype: Set<string>;
+  objectsizetype: Set<string>;
 }
 
 const DESCRIPTOR_PREFIX_ALIASES: Record<string, DescriptorKey> = {
@@ -264,6 +277,10 @@ const DESCRIPTOR_PREFIX_ALIASES: Record<string, DescriptorKey> = {
   itemtype: "type",
   objecttype: "objecttype",
   featuretype: "featuretype",
+  objectsizetype: "objectsizetype",
+  objectsize: "objectsizetype",
+  sizetype: "objectsizetype",
+  size: "objectsizetype",
 };
 
 const DESCRIPTOR_ALIASES: Record<string, DescriptorAlias> = {
@@ -282,8 +299,13 @@ const DESCRIPTOR_ALIASES: Record<string, DescriptorAlias> = {
   weapon: { descriptor: "objecttype", value: "weapon" },
   weapons: { descriptor: "objecttype", value: "weapon" },
   consumable: { descriptor: "objecttype", value: "consumable" },
+  consumables: { descriptor: "objecttype", value: "consumable" },
   miscellaneous: { descriptor: "objecttype", value: "misc" },
   misc: { descriptor: "objecttype", value: "misc" },
+  stackable: { descriptor: "objectsizetype", value: "stackable" },
+  stackables: { descriptor: "objectsizetype", value: "stackable" },
+  smallsized: { descriptor: "objectsizetype", value: "smallsized" },
+  slots: { descriptor: "objectsizetype", value: "slots" },
   classfeature: { descriptor: "featuretype", value: "class" },
   classfeatures: { descriptor: "featuretype", value: "class" },
   backgroundfeature: { descriptor: "featuretype", value: "background" },
@@ -453,6 +475,7 @@ function createItemDescriptors(): ItemDescriptors {
     type: new Set<string>(),
     objecttype: new Set<string>(),
     featuretype: new Set<string>(),
+    objectsizetype: new Set<string>(),
   };
 }
 
@@ -494,6 +517,9 @@ function collectItemDescriptors(item: AdapterItemRef): ItemDescriptors {
     appendNormalizedToken(itemSystem["featureType"], (value) =>
       addDescriptorValue(descriptors, "featuretype", value)
     );
+    appendNormalizedToken(itemSystem["objectSizeType"], (value) =>
+      addDescriptorValue(descriptors, "objectsizetype", value)
+    );
 
     LEGACY_TYPE_CANDIDATE_KEYS.forEach((key) => {
       appendNormalizedToken(itemSystem[key], (value) => addDescriptorAliasValue(descriptors, value));
@@ -508,6 +534,9 @@ function collectItemDescriptors(item: AdapterItemRef): ItemDescriptors {
       );
       appendNormalizedToken(systemDetails["featureType"], (value) =>
         addDescriptorValue(descriptors, "featuretype", value)
+      );
+      appendNormalizedToken(systemDetails["objectSizeType"], (value) =>
+        addDescriptorValue(descriptors, "objectsizetype", value)
       );
       LEGACY_TYPE_CANDIDATE_KEYS.forEach((key) => {
         appendNormalizedToken(systemDetails[key], (value) => addDescriptorAliasValue(descriptors, value));
@@ -553,6 +582,36 @@ function isCoreBaseIdentityItem(item: AdapterItemRef): boolean {
       CORE_BASE_IDENTITY_FEATURE_TYPES.has(candidate)
     )
   );
+}
+
+function isInventoryLikeItem(item: AdapterItemRef): boolean {
+  const descriptors = collectItemDescriptors(item);
+  return (
+    descriptors.type.has("object") ||
+    descriptors.objecttype.size > 0 ||
+    descriptors.objectsizetype.size > 0
+  );
+}
+
+function getInventoryIdentityKey(item: AdapterItemRef): string | null {
+  if (!isInventoryLikeItem(item)) {
+    return null;
+  }
+
+  const normalizedName = normalizeFilterName(item.name ?? "");
+  if (!normalizedName) {
+    return null;
+  }
+
+  const descriptors = collectItemDescriptors(item);
+  const serializeSet = (values: Set<string>): string => [...values].sort().join(",");
+
+  return [
+    normalizedName,
+    serializeSet(descriptors.type),
+    serializeSet(descriptors.objecttype),
+    serializeSet(descriptors.objectsizetype),
+  ].join("|");
 }
 
 function isWildshapeActionName(name: string | null | undefined): boolean {
@@ -748,6 +807,80 @@ function prepareFormItems(actor: Actor, itemIds: string[]): Record<string, unkno
     .map((id) => itemsById.get(id))
     .filter((item): item is Record<string, unknown> => isRecord(item))
     .map((item) => toInjectedItemPayload(item));
+}
+
+function collectInventoryIdentityKeysByItemIds(actor: Actor, itemIds: string[]): Set<string> {
+  const idSet = new Set(itemIds);
+  const identityKeys = new Set<string>();
+
+  getActorItems(actor).forEach((item) => {
+    if (!item.id || !idSet.has(item.id)) {
+      return;
+    }
+    const identityKey = getInventoryIdentityKey(item);
+    if (!identityKey) {
+      return;
+    }
+    identityKeys.add(identityKey);
+  });
+
+  return identityKeys;
+}
+
+function excludeFormItemIdsMatchingBaseInventory(
+  formActor: Actor,
+  formItemIds: string[],
+  baseInventoryIdentityKeys: Set<string>
+): string[] {
+  if (baseInventoryIdentityKeys.size === 0 || formItemIds.length === 0) {
+    return [...formItemIds];
+  }
+
+  const itemsById = new Map<string, AdapterItemRef>();
+  getActorItems(formActor).forEach((item) => {
+    if (!item.id) {
+      return;
+    }
+    if (!itemsById.has(item.id)) {
+      itemsById.set(item.id, item);
+    }
+  });
+
+  return formItemIds.filter((itemId) => {
+    const item = itemsById.get(itemId);
+    if (!item) {
+      return false;
+    }
+    const identityKey = getInventoryIdentityKey(item);
+    return !identityKey || !baseInventoryIdentityKeys.has(identityKey);
+  });
+}
+
+function dedupeInjectedInventoryItemsByIdentity(
+  rawItems: Record<string, unknown>[],
+  baseInventoryIdentityKeys: Set<string>
+): Record<string, unknown>[] {
+  const seenInventoryIdentityKeys = new Set(baseInventoryIdentityKeys);
+  const dedupedItems: Record<string, unknown>[] = [];
+
+  rawItems.forEach((rawItem) => {
+    if (!isRecord(rawItem)) {
+      return;
+    }
+
+    const item = toAdapterItemRefFromRaw(rawItem);
+    const identityKey = getInventoryIdentityKey(item);
+    if (identityKey) {
+      if (seenInventoryIdentityKeys.has(identityKey)) {
+        return;
+      }
+      seenInventoryIdentityKeys.add(identityKey);
+    }
+
+    dedupedItems.push(rawItem);
+  });
+
+  return dedupedItems;
 }
 
 function toInjectedItemPayload(
@@ -1160,12 +1293,24 @@ export class NimbleAdapter implements WildshapeAdapter {
     const formSystem = getSystemDataFromActorObject(formActorObject);
     const baseToken = getPrototypeTokenFromActorObject(baseActorObject);
     const formToken = getPrototypeTokenFromActorObject(formActorObject);
-    const formItemIds = filterItemIdsByRules(input.formActor, input.filters);
     const baseItemIdsToKeep = filterItemIdsByRules(input.baseActor, input.filters, {
       includeInjected: false,
       preserveCoreIdentity: true,
     });
+    const baseInventoryIdentityKeys = collectInventoryIdentityKeysByItemIds(
+      input.baseActor,
+      baseItemIdsToKeep
+    );
+    const formItemIds = excludeFormItemIdsMatchingBaseInventory(
+      input.formActor,
+      filterItemIdsByRules(input.formActor, input.filters),
+      baseInventoryIdentityKeys
+    );
     const mappedFormAbilityItems = await resolveMappedFormAbilityItems(input.formAbilityUuids ?? []);
+    const formItems = dedupeInjectedInventoryItemsByIdentity(
+      [...prepareFormItems(input.formActor, formItemIds), ...mappedFormAbilityItems],
+      baseInventoryIdentityKeys
+    );
 
     return {
       actorUpdate: {
@@ -1179,7 +1324,7 @@ export class NimbleAdapter implements WildshapeAdapter {
         }),
       },
       formItemIds,
-      formItems: [...prepareFormItems(input.formActor, formItemIds), ...mappedFormAbilityItems],
+      formItems,
       baseItemIdsToKeep,
     };
   }

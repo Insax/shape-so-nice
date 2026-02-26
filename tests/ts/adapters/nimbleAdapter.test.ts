@@ -578,6 +578,70 @@ describe("NimbleAdapter", () => {
     expect(plan.formItemIds).toEqual(["i2", "i3"]);
   });
 
+  it("supports Nimble consumable and stackable filters from objectType and objectSizeType", async () => {
+    const adapter = new NimbleAdapter();
+    const formActor = {
+      toObject: () => ({
+        system: {},
+        prototypeToken: {},
+      }),
+      items: {
+        contents: [
+          {
+            id: "i1",
+            name: "Healing Potion",
+            type: "object",
+            system: { objectType: "consumable", objectSizeType: "stackable" },
+          },
+          {
+            id: "i2",
+            name: "Torch Bundle",
+            type: "object",
+            system: { objectType: "misc", objectSizeType: "stackable" },
+          },
+          {
+            id: "i3",
+            name: "Leather Armor",
+            type: "object",
+            system: { objectType: "armor", objectSizeType: "slots" },
+          },
+        ],
+      },
+    } as unknown as Actor;
+
+    const consumablePlan = await adapter.buildTransformPlan({
+      baseActor: { toObject: () => ({}) } as unknown as Actor,
+      formActor,
+      snapshot: {
+        takenAt: "2026-02-26T00:00:00.000Z",
+        system: {},
+        items: [],
+        prototypeToken: {},
+      },
+      filters: {
+        whitelist: ["consumables"],
+        blacklist: [],
+      },
+    });
+    expect(consumablePlan.formItemIds).toEqual(["i1"]);
+
+    const stackablePlan = await adapter.buildTransformPlan({
+      baseActor: { toObject: () => ({}) } as unknown as Actor,
+      formActor,
+      snapshot: {
+        takenAt: "2026-02-26T00:00:00.000Z",
+        system: {},
+        items: [],
+        prototypeToken: {},
+      },
+      filters: {
+        whitelist: ["objectSizeType:stackable"],
+        blacklist: ["consumables"],
+      },
+    });
+    expect(stackablePlan.formItemIds).toEqual(["i2"]);
+  });
+
   it("supports name: filters and ignores empty/invalid prefixed filter rules", async () => {
     const adapter = new NimbleAdapter();
     const formActor = {
@@ -986,6 +1050,82 @@ describe("NimbleAdapter", () => {
       "ancestry-feature-space",
       "background-feature-space",
       "class-feature-space",
+    ]);
+  });
+
+  it("does not inject duplicate inventory items that already exist on the base actor keep-set", async () => {
+    const adapter = new NimbleAdapter();
+    const baseActor = {
+      toObject: () => ({
+        items: [
+          {
+            _id: "base-armor",
+            name: "Cheap Clothes",
+            type: "object",
+            system: { objectType: "armor", objectSizeType: "slots" },
+          },
+          {
+            _id: "base-weapon",
+            name: "Club",
+            type: "object",
+            system: { objectType: "weapon", objectSizeType: "slots" },
+          },
+        ],
+      }),
+      items: {},
+    } as unknown as Actor;
+    const formActor = {
+      toObject: () => ({
+        system: {},
+        prototypeToken: {},
+        items: [
+          {
+            _id: "form-armor",
+            name: "Cheap Clothes",
+            type: "object",
+            system: { objectType: "armor", objectSizeType: "slots" },
+          },
+          {
+            _id: "form-weapon",
+            name: "Club",
+            type: "object",
+            system: { objectType: "weapon", objectSizeType: "slots" },
+          },
+          {
+            _id: "form-action",
+            name: "Bite",
+            type: "feature",
+            system: { featureType: "class" },
+          },
+        ],
+      }),
+      items: {},
+    } as unknown as Actor;
+
+    const plan = await adapter.buildTransformPlan({
+      baseActor,
+      formActor,
+      snapshot: {
+        takenAt: "2026-02-26T00:00:00.000Z",
+        system: {},
+        items: [],
+        prototypeToken: {},
+      },
+      filters: {
+        whitelist: ["objectType:armor", "objectType:weapon", "featureType:class"],
+        blacklist: [],
+      },
+    });
+
+    expect(plan.baseItemIdsToKeep).toEqual(["base-armor", "base-weapon"]);
+    expect(plan.formItemIds).toEqual(["form-action"]);
+    expect(plan.formItems).toEqual([
+      {
+        name: "Bite",
+        type: "feature",
+        system: { featureType: "class" },
+        flags: { "shape-so-nice": { injected: true } },
+      },
     ]);
   });
 
