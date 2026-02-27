@@ -72,6 +72,7 @@ describe("hooks", () => {
         callbacks[event] = callback;
       }),
     };
+    delete (globalThis as Record<string, unknown>).game;
   });
 
   it("exposes static hook metadata", () => {
@@ -183,6 +184,77 @@ describe("hooks", () => {
     );
   });
 
+  it("ignores item-use hooks when direct item-use listener is active", async () => {
+    registerWildshapeHooks(() =>
+      createAdapter({
+        registerDirect: () => true,
+      })
+    );
+    callbacks.useItem({ name: "Wildshape", actor: { id: "a1" } });
+    await Promise.resolve();
+
+    expect(handleWildshapeItemUseMock).not.toHaveBeenCalled();
+    expect(debugAlertMock).toHaveBeenCalledWith(
+      "hook ignored (direct listener active): useItem"
+    );
+  });
+
+  it("ignores item-use hooks for non-initiating users when userId is provided", async () => {
+    const currentUser = { id: "user-current" };
+    const otherUser = { id: "user-other" };
+    (globalThis as Record<string, unknown>).game = {
+      user: currentUser,
+      users: {
+        get: (id: string) => {
+          if (id === currentUser.id) return currentUser;
+          if (id === otherUser.id) return otherUser;
+          return undefined;
+        },
+      },
+    };
+
+    const adapter = createAdapter();
+    registerWildshapeHooks(() => adapter);
+    callbacks.useItem({
+      name: "Wildshape",
+      actor: { id: "a1" },
+      userId: otherUser.id,
+    });
+    await Promise.resolve();
+
+    expect(handleWildshapeItemUseMock).not.toHaveBeenCalled();
+    expect(debugAlertMock).toHaveBeenCalledWith("hook ignored (different initiator): useItem");
+  });
+
+  it("forwards initiating user from item-use hook payload when it matches current user", async () => {
+    const currentUser = { id: "user-current" };
+    (globalThis as Record<string, unknown>).game = {
+      user: currentUser,
+      users: {
+        get: (id: string) => (id === currentUser.id ? currentUser : undefined),
+      },
+    };
+
+    const adapter = createAdapter();
+    registerWildshapeHooks(() => adapter);
+    callbacks.useItem({
+      name: "Wildshape",
+      actor: { id: "a1" },
+      userId: currentUser.id,
+    });
+    await Promise.resolve();
+
+    expect(handleWildshapeItemUseMock).toHaveBeenCalledWith(
+      {
+        name: "Wildshape",
+        actor: { id: "a1" },
+        userId: currentUser.id,
+      },
+      adapter,
+      currentUser
+    );
+  });
+
   it("logs adapter hook-arg extractor errors and skips trigger handling", async () => {
     registerWildshapeHooks(() =>
       createAdapter({
@@ -226,6 +298,30 @@ describe("hooks", () => {
       { name: "Beast Shape", actor: { id: "a1" } },
       adapter
     );
+  });
+
+  it("ignores chat fallback for non-initiating users when author is present", async () => {
+    const currentUser = { id: "user-current" };
+    const otherUser = { id: "user-other" };
+    (globalThis as Record<string, unknown>).game = {
+      user: currentUser,
+      users: {
+        get: (id: string) => {
+          if (id === currentUser.id) return currentUser;
+          if (id === otherUser.id) return otherUser;
+          return undefined;
+        },
+      },
+    };
+
+    const parserMock = vi.fn().mockReturnValue({ name: "Wildshape", actor: { id: "a1" } });
+    registerWildshapeHooks(() => createAdapter({ parser: parserMock }));
+
+    callbacks.createChatMessage({ kind: "message", author: { id: otherUser.id } });
+    await Promise.resolve();
+
+    expect(handleWildshapeItemUseMock).not.toHaveBeenCalled();
+    expect(debugAlertMock).toHaveBeenCalledWith("chat fallback ignored (different initiator)");
   });
 
   it("ignores chat fallback when no adapter is active", async () => {

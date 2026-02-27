@@ -54,6 +54,110 @@ function extractItemFromArgs(args: unknown[]): Item | null {
   return null;
 }
 
+function resolveUserById(userId: string): User | null {
+  const gameRef = (globalThis as { game?: Game }).game;
+  const usersCollection = gameRef?.users as unknown as
+    | {
+        get?: (id: string) => User | undefined;
+        contents?: User[];
+      }
+    | undefined;
+
+  const userFromGet = usersCollection?.get?.(userId);
+  if (userFromGet) {
+    return userFromGet;
+  }
+
+  const users = usersCollection?.contents;
+  if (!Array.isArray(users)) {
+    return null;
+  }
+
+  return users.find((user) => user.id === userId) ?? null;
+}
+
+function getCurrentUserId(): string | null {
+  const gameRef = (globalThis as { game?: Game }).game;
+  const userId = gameRef?.user?.id;
+  return typeof userId === "string" && userId.trim().length > 0 ? userId : null;
+}
+
+function resolveUserFromValue(value: unknown): User | null {
+  if (typeof value === "string") {
+    return resolveUserById(value);
+  }
+
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const candidateId = value["id"] ?? value["_id"] ?? value["userId"];
+  if (typeof candidateId !== "string" || candidateId.trim().length === 0) {
+    return null;
+  }
+
+  return resolveUserById(candidateId) ?? (value as User);
+}
+
+function extractTargetUserFromHookArgs(args: unknown[]): User | null {
+  for (const arg of args) {
+    if (!isRecord(arg)) {
+      continue;
+    }
+
+    const directCandidates = [arg["user"], arg["targetUser"], arg["author"], arg["userId"]];
+    for (const candidate of directCandidates) {
+      const resolved = resolveUserFromValue(candidate);
+      if (resolved) {
+        return resolved;
+      }
+    }
+
+    if ("isGM" in arg || "active" in arg || "role" in arg || "character" in arg) {
+      const resolved = resolveUserFromValue(arg);
+      if (resolved) {
+        return resolved;
+      }
+    }
+  }
+
+  return null;
+}
+
+function extractTargetUserFromChatMessage(message: unknown): User | null {
+  if (!isRecord(message)) {
+    return null;
+  }
+
+  const candidates = [
+    message["author"],
+    message["user"],
+    message["userId"],
+    message["speaker"],
+  ];
+  for (const candidate of candidates) {
+    const resolved = resolveUserFromValue(candidate);
+    if (resolved) {
+      return resolved;
+    }
+  }
+
+  return null;
+}
+
+function shouldHandleForCurrentUser(targetUser: User | null): boolean {
+  if (!targetUser?.id) {
+    return true;
+  }
+
+  const currentUserId = getCurrentUserId();
+  if (!currentUserId) {
+    return true;
+  }
+
+  return currentUserId === targetUser.id;
+}
+
 function resolveItemUseHooks(adapter: WildshapeAdapter | null): string[] {
   const hooksFromAdapter =
     adapter && typeof adapter.getItemUseHooks === "function"
@@ -79,7 +183,12 @@ export function registerWildshapeHooks(
   const directItemUseEnabled =
     adapter && typeof adapter.registerDirectItemUseListener === "function"
       ? adapter.registerDirectItemUseListener((item) => {
-          void handleWildshapeItemUse(item, getAdapter()).catch((error: unknown) => {
+          const targetUser = resolveUserById(getCurrentUserId() ?? "");
+          const handlerPromise = targetUser
+            ? handleWildshapeItemUse(item, getAdapter(), targetUser)
+            : handleWildshapeItemUse(item, getAdapter());
+
+          void handlerPromise.catch((error: unknown) => {
             const message = error instanceof Error ? error.message : String(error);
             logError("wildshape.trigger.failed", {
               hookName: DIRECT_ITEM_USE_SOURCE,
@@ -92,6 +201,11 @@ export function registerWildshapeHooks(
 
   itemUseHooks.forEach((hookName) => {
     Hooks.on(hookName, (...args: unknown[]) => {
+      if (directItemUseEnabled) {
+        debugAlert(`hook ignored (direct listener active): ${hookName}`);
+        return;
+      }
+
       debugAlert(`hook fired: ${hookName}`);
 
       let item: Item | null = null;
@@ -120,7 +234,16 @@ export function registerWildshapeHooks(
 
       debugAlert(`hook extracted item: ${hookName} (${String(item.name)})`);
 
-      void handleWildshapeItemUse(item, getAdapter()).catch((error: unknown) => {
+      const targetUser = extractTargetUserFromHookArgs(args);
+      if (!shouldHandleForCurrentUser(targetUser)) {
+        debugAlert(`hook ignored (different initiator): ${hookName}`);
+        return;
+      }
+
+      const handlerPromise = targetUser
+        ? handleWildshapeItemUse(item, getAdapter(), targetUser)
+        : handleWildshapeItemUse(item, getAdapter());
+      void handlerPromise.catch((error: unknown) => {
         const message = error instanceof Error ? error.message : String(error);
         logError("wildshape.trigger.failed", {
           hookName,
@@ -175,7 +298,16 @@ export function registerWildshapeHooks(
 
     debugAlert(`chat fallback extracted item (${String(item.name)})`);
 
-    void handleWildshapeItemUse(item, adapter).catch((error: unknown) => {
+    const targetUser = extractTargetUserFromChatMessage(args[0]);
+    if (!shouldHandleForCurrentUser(targetUser)) {
+      debugAlert("chat fallback ignored (different initiator)");
+      return;
+    }
+
+    const handlerPromise = targetUser
+      ? handleWildshapeItemUse(item, adapter, targetUser)
+      : handleWildshapeItemUse(item, adapter);
+    void handlerPromise.catch((error: unknown) => {
       const message = error instanceof Error ? error.message : String(error);
       logError("wildshape.trigger.failed", {
         hookName: CHAT_MESSAGE_FALLBACK_HOOK,
