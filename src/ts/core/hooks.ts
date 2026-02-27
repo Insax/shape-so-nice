@@ -96,7 +96,14 @@ function resolveUserFromValue(value: unknown): User | null {
     return null;
   }
 
-  return resolveUserById(candidateId) ?? (value as User);
+  const normalizedCandidateId = candidateId.trim();
+  const resolvedUser = resolveUserById(normalizedCandidateId);
+  if (resolvedUser) {
+    return resolvedUser;
+  }
+
+  // Some hook payloads only provide an ID-like user shape; a lightweight user reference is sufficient.
+  return { id: normalizedCandidateId } as unknown as User;
 }
 
 function extractTargetUserFromHookArgs(args: unknown[]): User | null {
