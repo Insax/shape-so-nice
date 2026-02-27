@@ -48,7 +48,7 @@ jobs:
           token: ${{ secrets.PUBLIC_TOKEN }}
           artifacts: "./dist/module.json, ./dist/module.zip"
           tag: ${{ github.event.release.tag_name }}
-          body: ${{ github.event.release.body
+          body: ${{ github.event.release.body }}
 
       # Publish the module to the FoundryVTT Website
       - name: Publish to FoundryVTT Website
